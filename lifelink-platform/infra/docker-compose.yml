@@ -1,0 +1,2 @@
+# Service composition boundary for local PostgreSQL, Redis, web, API, and analytics.
+# Add concrete images, ports, health checks, volumes, and environment wiring during setup.

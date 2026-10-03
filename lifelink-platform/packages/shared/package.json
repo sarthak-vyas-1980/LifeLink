@@ -1,0 +1,7 @@
+{
+  "name": "@lifelink/shared",
+  "private": true,
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  }
+}

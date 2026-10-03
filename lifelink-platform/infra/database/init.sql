@@ -1,0 +1,3 @@
+-- Local database initialization boundary.
+-- Prisma migrations will own operational schema creation.
+-- Keep vector-store and object-storage initialization separate.

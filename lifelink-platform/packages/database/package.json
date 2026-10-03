@@ -1,0 +1,14 @@
+{
+  "name": "@lifelink/database",
+  "private": true,
+  "dependencies": {
+    "@prisma/client": "^6.2.1"
+  },
+  "devDependencies": {
+    "prisma": "^6.2.1",
+    "typescript": "^5.7.2"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  }
+}

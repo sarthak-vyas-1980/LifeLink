@@ -1,0 +1,13 @@
+{
+  "name": "@lifelink/rag",
+  "private": true,
+  "dependencies": {
+    "@google/generative-ai": "^0.21.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.2"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  }
+}

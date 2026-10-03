@@ -1,0 +1,10 @@
+{
+  "name": "lifelink-platform",
+  "private": true,
+  "packageManager": "pnpm@10.15.0",
+  "scripts": {
+    "dev": "corepack pnpm --parallel --filter @lifelink/web --filter @lifelink/api dev",
+    "typecheck": "corepack pnpm --recursive typecheck",
+    "test": "corepack pnpm --recursive test"
+  }
+}

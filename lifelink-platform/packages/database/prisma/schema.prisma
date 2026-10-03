@@ -1,0 +1,9 @@
+// Prisma schema boundary for the authoritative operational PostgreSQL database.
+// Keep the following models aligned with the ER diagram:
+// User, HospitalUser, DonorRecipient, Administrator, Institution,
+// BloodInventory, OrganInventory, Request, RequestRecipient, Match,
+// Donation, DonationInventory, Allocation, Notification, UserDocument,
+// RagKnowledgeBase, AuditLog, and Prediction.
+//
+// Add relations, indexes, enums, datasource, and generator configuration here
+// during schema implementation. The RAG vector store remains separate.
