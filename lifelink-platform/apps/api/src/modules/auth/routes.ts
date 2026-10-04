@@ -1,14 +1,64 @@
-// Define registration, login, logout, and recovery endpoints.
-export function registerAuthRoutes() {
-  // Keep credential operations behind rate limiting and request validation.
+import { Router, type Request, type Response } from "express";
+import { invalidateAuthenticatedSession } from "../../middleware/auth";
+import {
+  validateRequest,
+  loginSchema,
+  registrationSchema,
+} from "../../middleware/validation";
+import { loginUser, registerUser } from "./service";
+
+function safeUser<T extends { passwordHash: string }>(
+  user: T,
+): Omit<T, "passwordHash"> {
+  const { passwordHash: _passwordHash, ...publicUser } = user;
+  return publicUser;
 }
 
-// Handle the registration use case.
-export function handleRegistration() {
-  // Delegate account creation to the authentication service.
+// Define registration, login, and logout endpoints with validation at the boundary.
+export function registerAuthRoutes(router = Router()) {
+  router.post(
+    "/register",
+    validateRequest(registrationSchema),
+    handleRegistration,
+  );
+  router.post("/login", validateRequest(loginSchema), handleLogin);
+  router.post("/logout", handleLogout);
+  return router;
+}
+
+// Handle registration without returning credential material.
+export async function handleRegistration(request: Request, response: Response) {
+  try {
+    const result = await registerUser(request.body);
+    response
+      .status(201)
+      .json({ user: safeUser(result.user), token: result.token });
+  } catch {
+    response
+      .status(409)
+      .json({
+        code: "REGISTRATION_FAILED",
+        message: "Account could not be created.",
+      });
+  }
 }
 
 // Handle login and return the authorized dashboard context.
-export function handleLogin() {
-  // Delegate credential verification and session creation to the service.
+export async function handleLogin(request: Request, response: Response) {
+  try {
+    const result = await loginUser(request.body.email, request.body.password);
+    response.json({ user: safeUser(result.user), token: result.token });
+  } catch {
+    response
+      .status(401)
+      .json({ code: "AUTH_INVALID", message: "Invalid credentials." });
+  }
+}
+
+// Revoke the presented session token at the session boundary.
+export function handleLogout(request: Request, response: Response) {
+  const token = request.header("authorization")?.replace(/^Bearer\s+/i, "");
+  response.json(
+    token ? invalidateAuthenticatedSession(token) : { revoked: true },
+  );
 }

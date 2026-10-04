@@ -1,4 +1,9 @@
-// Package entry point for shared roles, statuses, enums, and contracts.
+// Package entry point for stable cross-layer domain definitions.
+export * from "./api-contracts";
+export * from "./enums";
+export * from "./roles";
+export * from "./workflow-status";
+
 export function createSharedDomainContext() {
-  // Expose only stable cross-layer domain definitions.
+  return "lifelink-domain";
 }

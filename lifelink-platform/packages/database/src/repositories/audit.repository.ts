@@ -1,8 +1,24 @@
-// Append an audit event to the operational audit record.
-export function appendAuditEvent() {
-  // Keep actor, action, entity, timestamp, and correlation metadata traceable.
+import { Prisma } from "@prisma/client";
+import { database } from "../client";
+
+export interface AuditEventInput {
+  actorId?: string;
+  action: string;
+  entityType: string;
+  entityId: string;
+  metadata?: Prisma.InputJsonValue;
 }
 
-export function findAuditEvents() {
-  // Apply administrator authorization and safe filtering to audit searches.
+// Append a traceable record for a significant state-changing action.
+export function appendAuditEvent(data: AuditEventInput) {
+  return database.auditLog.create({ data });
+}
+
+export function findAuditEvents(where: Prisma.AuditLogWhereInput, take = 100) {
+  return database.auditLog.findMany({
+    where,
+    include: { actor: true },
+    orderBy: { createdAt: "desc" },
+    take,
+  });
 }

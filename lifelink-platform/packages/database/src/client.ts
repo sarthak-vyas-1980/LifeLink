@@ -1,9 +1,20 @@
-// Create the shared operational database client.
+import { Prisma, PrismaClient } from "@prisma/client";
+
+export const database = new PrismaClient();
+
+// Expose the process-wide operational client to repositories and services.
 export function createDatabaseClient() {
-  // Configure Prisma/PostgreSQL once for the API process.
+  return database;
+}
+
+// Run related state changes in one database transaction.
+export function runInTransaction<T>(
+  operation: (transaction: Prisma.TransactionClient) => Promise<T>,
+) {
+  return database.$transaction(operation);
 }
 
 // Close the database client during application shutdown.
 export async function disconnectDatabase() {
-  // Release connections cleanly after in-flight work drains.
+  await database.$disconnect();
 }

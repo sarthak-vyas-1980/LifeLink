@@ -1,14 +1,27 @@
 // Write a traceable record for a significant state-changing action.
-export function recordAuditEvent() {
-  // Capture actor, action, entity, timestamp, correlation, and safe metadata.
+import { Prisma } from "@prisma/client";
+import { appendAuditEvent, findAuditEvents } from "@lifelink/database";
+
+export interface AuditEventInput {
+  actorId?: string;
+  action: string;
+  entityType: string;
+  entityId: string;
+  metadata?: Prisma.InputJsonValue;
 }
 
-// Search audit records using authorized administrative filters.
-export function queryAuditEvents() {
-  // Support actor, entity, action, time, and workflow correlation filters.
+// Write only safe metadata; credentials, tokens, and medical details never belong here.
+export function recordAuditEvent(data: AuditEventInput) {
+  return appendAuditEvent(data);
 }
 
-// Protect audit records from unauthorized modification or deletion.
+export function queryAuditEvents(where: Prisma.AuditLogWhereInput, take = 100) {
+  return findAuditEvents(where, take);
+}
+
+// Audit records are append-only at the service boundary.
 export function protectAuditRecord() {
-  // Apply append-only or controlled-retention behavior as configured.
+  throw new Error(
+    "Audit records cannot be modified or deleted through the API.",
+  );
 }
