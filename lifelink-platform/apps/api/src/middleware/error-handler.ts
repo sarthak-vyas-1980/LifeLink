@@ -1,15 +1,18 @@
 import type { ErrorRequestHandler } from "express";
+import { ZodError } from "zod";
+import { ApiError } from "./api-error";
 
 interface SafeError {
   status: number;
   code: string;
   message: string;
+  fieldErrors?: Record<string, string[]>;
 }
 
 // Convert known failures into safe, consistent API responses.
 export const handleApiError: ErrorRequestHandler = (
   error,
-  _request,
+  request,
   response,
   _next,
 ) => {
@@ -21,11 +24,52 @@ export const handleApiError: ErrorRequestHandler = (
   response.status(safeError.status).json({
     code: safeError.code,
     message: safeError.message,
+    traceId: request.traceId,
+    ...(safeError.fieldErrors ? { fieldErrors: safeError.fieldErrors } : {}),
   });
 };
 
 // Map failures without exposing stacks, credentials, or protected record details.
 export function mapRequestError(error: unknown): SafeError {
+  if (error instanceof ApiError) {
+    return {
+      status: error.status,
+      code: error.code,
+      message: error.message,
+      fieldErrors: error.fieldErrors,
+    };
+  }
+
+  if (error instanceof ZodError) {
+    return {
+      status: 400,
+      code: "VALIDATION_FAILED",
+      message: "Request validation failed.",
+      fieldErrors: error.flatten().fieldErrors as Record<string, string[]>,
+    };
+  }
+
+  if (error && typeof error === "object" && "code" in error) {
+    const code = String((error as { code: unknown }).code);
+    if (code === "P2002") {
+      return { status: 409, code: "RESOURCE_CONFLICT", message: "A record with those details already exists." };
+    }
+    if (code === "P2025") {
+      return { status: 404, code: "NOT_FOUND", message: "Requested resource was not found." };
+    }
+    if (code === "P2003" || code === "P2000") {
+      return { status: 400, code: "INVALID_REFERENCE", message: "A referenced value is invalid." };
+    }
+  }
+
+  if (
+    error instanceof SyntaxError &&
+    "status" in error &&
+    (error as SyntaxError & { status?: number }).status === 400
+  ) {
+    return { status: 400, code: "INVALID_JSON", message: "Request body must contain valid JSON." };
+  }
+
   if (error instanceof Error && error.message.includes("not authorized")) {
     return {
       status: 403,
@@ -40,6 +84,14 @@ export function mapRequestError(error: unknown): SafeError {
       code: "NOT_FOUND",
       message: "Requested resource was not found.",
     };
+  }
+
+  if (error instanceof Error && error.message.includes("does not belong to the requesting institution")) {
+    return { status: 404, code: "INVENTORY_NOT_FOUND", message: "Inventory record not found." };
+  }
+
+  if (error instanceof Error && error.message.includes("state changed")) {
+    return { status: 409, code: "WORKFLOW_CONFLICT", message: "The record changed. Refresh and try again." };
   }
 
   return {

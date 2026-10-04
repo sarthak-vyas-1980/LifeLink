@@ -1,5 +1,7 @@
 export * from "./client";
 export * from "./repositories/audit.repository";
+export * from "./repositories/notification.repository";
+export * from "./repositories/workflow-event.repository";
 export * from "./repositories/donation.repository";
 export * from "./repositories/institution.repository";
 export * from "./repositories/inventory.repository";

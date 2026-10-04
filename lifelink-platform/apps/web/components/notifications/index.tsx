@@ -1,8 +1,7 @@
-// Render authorized notification and alert items.
-export function NotificationList() {
-  // Separate unread, emergency, request, and organ-coordination events.
-}
-
-export function NotificationItem() {
-  // Provide safe status details and an explicit acknowledgement action.
-}
+"use client";
+import { useCallback,useEffect,useState } from "react";
+import { requestApi,submitWorkflowAction,ApiFailure } from "../../lib/api-client";
+import { subscribeToWorkflowEvents } from "../../lib/socket-client";
+type Notification={id:string;title:string;message:string;type:string;status:string;createdAt:string;requestId?:string|null};
+export default function NotificationsInbox(){const [items,setItems]=useState<Notification[]>([]);const [error,setError]=useState("");const load=useCallback(()=>requestApi<{notifications:Notification[]}>("/api/notifications?limit=100").then((r)=>setItems(r.notifications)).catch((e)=>setError(e instanceof ApiFailure?e.message:"Could not load notifications.")),[]);useEffect(()=>{void load();return subscribeToWorkflowEvents(()=>void load());},[load]);const markRead=async(id:string)=>{try{await submitWorkflowAction(`/api/notifications/${id}/read`);setItems((all)=>all.map((item)=>item.id===id?{...item,status:"READ"}:item));}catch(e){setError(e instanceof ApiFailure?e.message:"Could not update notification.");}};
+return <div className="page-stack"><header className="page-heading"><div><span className="eyebrow">REAL-TIME UPDATES</span><h1>Notifications</h1><p>Messages scoped to your account and authorized workflow participation.</p></div><button className="button quiet" onClick={()=>void load()}>Refresh inbox</button></header><section className="panel inbox-list">{error&&<p className="error">{error}</p>}{items.length===0?<p className="empty">You are all caught up.</p>:items.map((item)=><article className={`notification-row ${item.status==="UNREAD"?"unread":""}`} key={item.id}><span className="notification-bullet"/><div className="notification-content"><div className="notification-title"><strong>{item.title}</strong><time>{new Date(item.createdAt).toLocaleString()}</time></div><p>{item.message}</p>{item.status==="UNREAD"&&<button className="text-button" onClick={()=>void markRead(item.id)}>Mark as read</button>}</div></article>)}</section></div>;}

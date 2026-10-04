@@ -54,6 +54,11 @@ function verifyToken(token: string): AuthContext {
   };
 }
 
+// Validate Socket.IO handshakes with the same JWT and revocation rules as HTTP.
+export function authenticateSocketToken(token: string): AuthContext {
+  return verifyToken(token);
+}
+
 // Resolve the authenticated actor from the incoming request/session.
 export function authenticateRequest(): RequestHandler {
   return (request: Request, response: Response, next: NextFunction) => {
@@ -61,7 +66,11 @@ export function authenticateRequest(): RequestHandler {
     if (!token) {
       response
         .status(401)
-        .json({ code: "AUTH_REQUIRED", message: "Authentication required." });
+        .json({
+          code: "AUTH_REQUIRED",
+          message: "Authentication required.",
+          traceId: request.traceId,
+        });
       return;
     }
 
@@ -72,6 +81,7 @@ export function authenticateRequest(): RequestHandler {
       response.status(401).json({
         code: "AUTH_INVALID",
         message: "Invalid authentication token.",
+        traceId: request.traceId,
       });
     }
   };

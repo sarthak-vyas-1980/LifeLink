@@ -7,7 +7,7 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
-    "@lifelink/shared": "workspace:*",
+    "@lifelink/shared": "*",
     "@prisma/client": "^6.2.1"
   },
   "devDependencies": {

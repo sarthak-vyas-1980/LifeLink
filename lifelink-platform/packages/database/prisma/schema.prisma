@@ -293,6 +293,10 @@ model Match {
 	compatibilityScore  Float?
 	status              MatchStatus          @default(PENDING)
 	matchedDate         DateTime             @default(now())
+	reservedAt          DateTime?
+	reservationExpiresAt DateTime?
+	dispatchedAt        DateTime?
+	receivedAt           DateTime?
 	request             Request              @relation(fields: [requestId], references: [id], onDelete: Cascade)
 	providerInstitution Institution?         @relation("ProviderMatches", fields: [providerInstitutionId], references: [id])
 	bloodInventory     BloodInventory?      @relation(fields: [bloodInventoryId], references: [id])
@@ -302,6 +306,7 @@ model Match {
 
 	@@index([requestId, status])
 	@@index([providerInstitutionId, status])
+	@@index([status, reservationExpiresAt])
 }
 
 model Donation {
@@ -355,14 +360,33 @@ model Allocation {
 model Notification {
 	id          String               @id @default(uuid()) @db.Uuid
 	userId      String               @db.Uuid
+	eventId     String?              @db.Uuid
+	eventType   String?
+	requestId   String?              @db.Uuid
 	title       String
 	message     String
+	payload     Json?
 	type        NotificationType
 	status      NotificationStatus   @default(UNREAD)
 	createdAt   DateTime             @default(now())
 	user        User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
 
 	@@index([userId, status, createdAt])
+	@@index([requestId, createdAt])
+	@@unique([userId, eventId])
+}
+
+model WorkflowEvent {
+	id          String   @id @default(uuid()) @db.Uuid
+	eventType   String
+	requestId   String?  @db.Uuid
+	actorId     String?  @db.Uuid
+	payload     Json
+	createdAt   DateTime @default(now())
+	publishedAt DateTime?
+
+	@@index([publishedAt, createdAt])
+	@@index([requestId, createdAt])
 }
 
 model UserDocument {

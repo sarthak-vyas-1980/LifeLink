@@ -1,4 +1,4 @@
-import { Router, type Request, type Response } from "express";
+import { Router, type Request, type RequestHandler, type Response } from "express";
 import { invalidateAuthenticatedSession } from "../../middleware/auth";
 import {
   validateRequest,
@@ -19,40 +19,25 @@ export function registerAuthRoutes(router = Router()) {
   router.post(
     "/register",
     validateRequest(registrationSchema),
-    handleRegistration,
+    asyncRoute(handleRegistration),
   );
-  router.post("/login", validateRequest(loginSchema), handleLogin);
+  router.post("/login", validateRequest(loginSchema), asyncRoute(handleLogin));
   router.post("/logout", handleLogout);
   return router;
 }
 
 // Handle registration without returning credential material.
 export async function handleRegistration(request: Request, response: Response) {
-  try {
-    const result = await registerUser(request.body);
-    response
-      .status(201)
-      .json({ user: safeUser(result.user), token: result.token });
-  } catch {
-    response
-      .status(409)
-      .json({
-        code: "REGISTRATION_FAILED",
-        message: "Account could not be created.",
-      });
-  }
+  const result = await registerUser(request.body);
+  response
+    .status(201)
+    .json({ user: safeUser(result.user), token: result.token });
 }
 
 // Handle login and return the authorized dashboard context.
 export async function handleLogin(request: Request, response: Response) {
-  try {
-    const result = await loginUser(request.body.email, request.body.password);
-    response.json({ user: safeUser(result.user), token: result.token });
-  } catch {
-    response
-      .status(401)
-      .json({ code: "AUTH_INVALID", message: "Invalid credentials." });
-  }
+  const result = await loginUser(request.body.email, request.body.password);
+  response.json({ user: safeUser(result.user), token: result.token });
 }
 
 // Revoke the presented session token at the session boundary.
@@ -61,4 +46,10 @@ export function handleLogout(request: Request, response: Response) {
   response.json(
     token ? invalidateAuthenticatedSession(token) : { revoked: true },
   );
+}
+
+function asyncRoute(handler: RequestHandler): RequestHandler {
+  return (request, response, next) => {
+    Promise.resolve(handler(request, response, next)).catch(next);
+  };
 }

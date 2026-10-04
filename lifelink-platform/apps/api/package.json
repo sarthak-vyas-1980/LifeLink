@@ -2,9 +2,9 @@
   "name": "@lifelink/api",
   "private": true,
   "dependencies": {
-    "@lifelink/database": "workspace:*",
-    "@lifelink/rag": "workspace:*",
-    "@lifelink/shared": "workspace:*",
+    "@lifelink/database": "*",
+    "@lifelink/rag": "*",
+    "@lifelink/shared": "*",
     "@prisma/client": "^6.2.1",
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",

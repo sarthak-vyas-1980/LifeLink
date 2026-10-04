@@ -2,6 +2,8 @@ import {
   BloodComponent,
   BloodGroup,
   BloodInventoryStatus,
+  InstitutionStatus,
+  InstitutionType,
   Prisma,
 } from "@prisma/client";
 import { database, runInTransaction } from "../client";
@@ -53,10 +55,15 @@ export function searchAvailableInventory(
       status: BloodInventoryStatus.AVAILABLE,
       unitsAvailable: { gte: criteria.quantity },
       institutionId: criteria.institutionId,
-      lastUpdated: criteria.freshnessMinutes
-        ? { gte: new Date(Date.now() - criteria.freshnessMinutes * 60_000) }
-        : undefined,
+      lastUpdated:
+        criteria.freshnessMinutes !== undefined
+          ? { gte: new Date(Date.now() - criteria.freshnessMinutes * 60_000) }
+          : undefined,
       OR: [{ expiryDate: null }, { expiryDate: { gt: new Date() } }],
+      institution: {
+        status: InstitutionStatus.ACTIVE,
+        type: { in: [InstitutionType.HOSPITAL, InstitutionType.BLOOD_BANK] },
+      },
     },
     include: { institution: true },
     orderBy: [{ expiryDate: "asc" }, { lastUpdated: "desc" }],
@@ -95,6 +102,7 @@ export async function reserveBloodUnits(
       id,
       status: BloodInventoryStatus.AVAILABLE,
       unitsAvailable: { gte: quantity },
+      OR: [{ expiryDate: null }, { expiryDate: { gt: new Date() } }],
     },
     data: {
       unitsAvailable: { decrement: quantity },

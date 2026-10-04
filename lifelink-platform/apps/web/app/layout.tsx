@@ -1,4 +1,7 @@
-// Define the shared document shell and application providers.
-export default function RootLayout() {
-  // Register global styles, session context, notifications, and real-time context.
+import "./globals.css";
+import "leaflet/dist/leaflet.css";
+import type { ReactNode } from "react";
+
+export default function RootLayout({ children }: { children: ReactNode }) {
+  return <html lang="en"><body>{children}</body></html>;
 }

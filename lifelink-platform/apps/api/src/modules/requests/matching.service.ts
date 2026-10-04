@@ -6,6 +6,7 @@ import {
   searchAvailableInventory,
   saveRequestTransition,
 } from "@lifelink/database";
+import { ApiError } from "../../middleware/api-error";
 import {
   calculateDistance,
   filterFacilitiesByRadius,
@@ -37,17 +38,23 @@ export interface BloodMatchingResult {
   };
 }
 
+const MAX_SEARCH_RADIUS_KM = 500;
+
 function scoreCandidate(
   candidate: Omit<BloodMatchCandidate, "score" | "guaranteedFulfilment">,
   quantity: number,
   radiusKm?: number,
+  freshnessWindowMinutes = 1440,
 ) {
   const distanceScore =
     candidate.distanceKm === undefined || radiusKm === undefined
       ? 1
       : Math.max(0, 1 - candidate.distanceKm / radiusKm);
   const stockScore = Math.min(candidate.unitsAvailable / quantity, 3) / 3;
-  const freshnessScore = Math.max(0, 1 - candidate.freshnessMinutes / 1440);
+  const freshnessScore = Math.max(
+    0,
+    1 - candidate.freshnessMinutes / freshnessWindowMinutes,
+  );
   const expiryScore =
     candidate.expiryProximityHours === undefined
       ? 0.5
@@ -83,11 +90,47 @@ export async function findBloodMatches(input: {
   radiusKm?: number;
   freshnessMinutes?: number;
 }): Promise<BloodMatchingResult> {
+  if (!Number.isInteger(input.quantity) || input.quantity <= 0) {
+    throw new ApiError(400, "INVALID_MATCH_CRITERIA", "Requested quantity must be a positive whole number.");
+  }
+  if ((input.latitude === undefined) !== (input.longitude === undefined)) {
+    throw new ApiError(400, "INVALID_MATCH_CRITERIA",
+      "Both latitude and longitude are required for location search.",
+    );
+  }
+  if (
+    input.latitude !== undefined &&
+    (input.latitude < -90 || input.latitude > 90)
+  ) {
+    throw new ApiError(400, "INVALID_MATCH_CRITERIA", "Latitude must be between -90 and 90 degrees.");
+  }
+  if (
+    input.longitude !== undefined &&
+    (input.longitude < -180 || input.longitude > 180)
+  ) {
+    throw new ApiError(400, "INVALID_MATCH_CRITERIA", "Longitude must be between -180 and 180 degrees.");
+  }
+  if (
+    input.radiusKm !== undefined &&
+    (input.radiusKm <= 0 || input.radiusKm > MAX_SEARCH_RADIUS_KM)
+  ) {
+    throw new ApiError(400, "INVALID_MATCH_CRITERIA",
+      `Search radius must be between 0 and ${MAX_SEARCH_RADIUS_KM} km.`,
+    );
+  }
+  if (input.radiusKm !== undefined && input.latitude === undefined) {
+    throw new ApiError(400, "INVALID_MATCH_CRITERIA", "A search radius requires request coordinates.");
+  }
+  const freshnessWindowMinutes = input.freshnessMinutes ?? 1440;
+  if (!Number.isFinite(freshnessWindowMinutes) || freshnessWindowMinutes <= 0) {
+    throw new ApiError(400, "INVALID_MATCH_CRITERIA", "Freshness window must be a positive number of minutes.");
+  }
+
   const inventory = await searchAvailableInventory({
     bloodGroup: input.bloodGroup,
     component: input.component,
     quantity: input.quantity,
-    freshnessMinutes: input.freshnessMinutes ?? 1440,
+    freshnessMinutes: freshnessWindowMinutes,
   });
   const now = Date.now();
 
@@ -127,7 +170,12 @@ export async function findBloodMatches(input: {
 
     return {
       ...candidate,
-      score: scoreCandidate(candidate, input.quantity, input.radiusKm),
+      score: scoreCandidate(
+        candidate,
+        input.quantity,
+        input.radiusKm,
+        freshnessWindowMinutes,
+      ),
       guaranteedFulfilment: false as const,
     };
   });
@@ -159,10 +207,14 @@ export async function findBloodMatches(input: {
       status: "NO_MATCH",
       candidates: [],
       retry: {
-        canWidenRadius: input.radiusKm !== undefined,
-        suggestedRadiusKm: input.radiusKm
-          ? Math.min(input.radiusKm * 2, 500)
-          : undefined,
+        canWidenRadius:
+          input.radiusKm !== undefined &&
+          input.radiusKm < MAX_SEARCH_RADIUS_KM,
+        suggestedRadiusKm:
+          input.radiusKm !== undefined &&
+          input.radiusKm < MAX_SEARCH_RADIUS_KM
+            ? Math.min(input.radiusKm * 2, MAX_SEARCH_RADIUS_KM)
+            : undefined,
         reason:
           "No current inventory candidate satisfies the requested filters.",
       },
@@ -172,7 +224,15 @@ export async function findBloodMatches(input: {
   return {
     status: "MATCHES_FOUND",
     candidates: persistedCandidates,
-    retry: { canWidenRadius: true },
+    retry: {
+      canWidenRadius:
+        input.radiusKm !== undefined &&
+        input.radiusKm < MAX_SEARCH_RADIUS_KM,
+      suggestedRadiusKm:
+        input.radiusKm !== undefined && input.radiusKm < MAX_SEARCH_RADIUS_KM
+          ? Math.min(input.radiusKm * 2, MAX_SEARCH_RADIUS_KM)
+          : undefined,
+    },
   };
 }
 
@@ -180,7 +240,7 @@ export async function findBloodMatches(input: {
 export async function reopenMatchingCycle(requestId: string, actorId?: string) {
   const request = await findRequestById(requestId);
   if (!request) {
-    throw new Error("Request not found.");
+    throw new ApiError(404, "REQUEST_NOT_FOUND", "Request not found.");
   }
 
   return saveRequestTransition(
@@ -189,6 +249,72 @@ export async function reopenMatchingCycle(requestId: string, actorId?: string) {
     RequestStatus.REOPENED,
     actorId,
   );
+}
+
+// Advance a blood request through the normal matching states and return persisted state.
+export async function startBloodMatchingWorkflow(
+  requestId: string,
+  actorId?: string,
+  radiusKmOverride?: number,
+) {
+  const request = await findRequestById(requestId);
+  if (!request || request.requestType !== "BLOOD") {
+    throw new ApiError(404, "REQUEST_NOT_FOUND", "Blood request not found.");
+  }
+  const matchableStatuses: RequestStatus[] = [
+    RequestStatus.UNDER_REVIEW,
+    RequestStatus.REOPENED,
+    RequestStatus.SEARCHING_MATCHING,
+  ];
+  if (!matchableStatuses.includes(request.status)) {
+    throw new ApiError(409, "REQUEST_NOT_MATCHABLE", "The request is not in a matchable workflow state.");
+  }
+  if (radiusKmOverride !== undefined && (!Number.isFinite(radiusKmOverride) || radiusKmOverride <= 0 || radiusKmOverride > MAX_SEARCH_RADIUS_KM)) {
+    throw new ApiError(400, "INVALID_MATCH_CRITERIA", `Search radius must be between 1 and ${MAX_SEARCH_RADIUS_KM} km.`);
+  }
+
+  if (
+    request.status === RequestStatus.UNDER_REVIEW ||
+    request.status === RequestStatus.REOPENED
+  ) {
+    await saveRequestTransition(
+      requestId,
+      request.status,
+      RequestStatus.SEARCHING_MATCHING,
+      actorId,
+    );
+  }
+
+  const matching = await findBloodMatches({
+    requestId,
+    bloodGroup: request.bloodGroup!,
+    component: request.component!,
+    quantity: request.quantity,
+    latitude: request.latitude ?? undefined,
+    longitude: request.longitude ?? undefined,
+    radiusKm: radiusKmOverride ?? request.radiusKm ?? undefined,
+  });
+
+  if (matching.status === "NO_MATCH") {
+    await saveRequestTransition(
+      requestId,
+      RequestStatus.SEARCHING_MATCHING,
+      RequestStatus.REOPENED,
+      actorId,
+    );
+  } else {
+    await saveRequestTransition(
+      requestId,
+      RequestStatus.SEARCHING_MATCHING,
+      RequestStatus.INSTITUTIONS_NOTIFIED,
+      actorId,
+    );
+  }
+
+  return {
+    request: await findRequestById(requestId),
+    matching,
+  };
 }
 
 // Organ matching has a separate Phase 7 workflow and is intentionally not reused here.

@@ -1,24 +1,30 @@
-import { Router, type Request, type Response } from "express";
+import { Router, type Request, type RequestHandler, type Response } from "express";
 import { findUserById, saveUser } from "@lifelink/database";
 import { authenticateRequest } from "../../middleware/auth";
 import { authorizeAction } from "../../middleware/rbac";
 import {
   profileUpdateSchema,
   validateRequest,
+  validateUuidParams,
 } from "../../middleware/validation";
 import { serializeDonorForActor } from "../../security/field-policy";
 import { recordAuditEvent } from "../audit/service";
 
 // Define profile and account-management endpoints for authenticated users.
 export function registerUserRoutes(router = Router()) {
-  router.get("/me", authenticateRequest(), getUserProfile);
-  router.get("/:userId", authenticateRequest(), getUserProfile);
+  router.get("/me", authenticateRequest(), asyncRoute(getUserProfile));
+  router.get(
+    "/:userId",
+    authenticateRequest(),
+    validateUuidParams("userId"),
+    asyncRoute(getUserProfile),
+  );
   router.patch(
     "/me",
     authenticateRequest(),
     authorizeAction(),
     validateRequest(profileUpdateSchema),
-    updateUserProfile,
+    asyncRoute(updateUserProfile),
   );
   return router;
 }
@@ -47,9 +53,47 @@ export async function getUserProfile(request: Request, response: Response) {
     return;
   }
 
-  const { passwordHash: _passwordHash, donorProfile, ...publicUser } = user;
+  const {
+    id,
+    name,
+    email,
+    phone,
+    role,
+    status,
+    institutionId,
+    createdAt,
+    updatedAt,
+    institution,
+    hospitalProfile,
+    donorProfile,
+  } = user;
   response.json({
-    ...publicUser,
+    id,
+    name,
+    email,
+    phone,
+    role,
+    status,
+    institutionId,
+    createdAt,
+    updatedAt,
+    institution: institution
+      ? {
+          id: institution.id,
+          name: institution.name,
+          type: institution.type,
+          status: institution.status,
+          address: institution.address,
+          latitude: institution.latitude,
+          longitude: institution.longitude,
+        }
+      : null,
+    hospitalProfile: hospitalProfile
+      ? {
+          department: hospitalProfile.department,
+          licenseNumber: hospitalProfile.licenseNumber,
+        }
+      : null,
     donorProfile: donorProfile
       ? serializeDonorForActor(donorProfile, request.auth)
       : null,
@@ -74,6 +118,20 @@ export async function updateUserProfile(request: Request, response: Response) {
     entityId: userId,
     metadata: { fields: Object.keys(request.body) },
   });
-  const { passwordHash: _passwordHash, ...publicUser } = user;
-  response.json(publicUser);
+  response.json({
+    id: user.id,
+    name: user.name,
+    email: user.email,
+    phone: user.phone,
+    role: user.role,
+    status: user.status,
+    institutionId: user.institutionId,
+    updatedAt: user.updatedAt,
+  });
+}
+
+function asyncRoute(handler: RequestHandler): RequestHandler {
+  return (request, response, next) => {
+    Promise.resolve(handler(request, response, next)).catch(next);
+  };
 }

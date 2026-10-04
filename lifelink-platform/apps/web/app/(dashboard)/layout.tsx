@@ -1,8 +1,6 @@
-// Define the authenticated role-aware dashboard shell.
-export default function DashboardLayout() {
-  // Compose navigation, session guard, notification surface, and page content.
-}
+import type { ReactNode } from "react";
+import DashboardShell from "../../components/navigation";
 
-function resolveVisibleNavigation() {
-  // Show only features permitted by the backend-authorized role context.
+export default function DashboardLayout({ children }: { children: ReactNode }) {
+  return <DashboardShell>{children}</DashboardShell>;
 }

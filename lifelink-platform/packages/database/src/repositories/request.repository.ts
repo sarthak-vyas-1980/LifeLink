@@ -2,6 +2,7 @@ import { Prisma, RequestStatus as PrismaRequestStatus } from "@prisma/client";
 import { isAllowedTransition, RequestStatus } from "@lifelink/shared";
 import { database, runInTransaction } from "../client";
 import { consumeReservedBloodUnits } from "./inventory.repository";
+import { recordWorkflowEvent } from "./workflow-event.repository";
 
 export function findRequestById(id: string) {
   return database.request.findUnique({
@@ -17,7 +18,19 @@ export function findRequestById(id: string) {
 }
 
 export function createRequest(data: Prisma.RequestCreateInput) {
-  return database.request.create({ data });
+  return runInTransaction(async (transaction) => {
+    const request = await transaction.request.create({ data });
+    await recordWorkflowEvent(transaction, {
+      eventType:
+        request.priority === "EMERGENCY"
+          ? "EMERGENCY_REQUEST_CREATED"
+          : "REQUEST_CREATED",
+      requestId: request.id,
+      actorId: request.createdById,
+      payload: { status: request.status },
+    });
+    return request;
+  });
 }
 
 export function searchRequests(where: Prisma.RequestWhereInput, take = 100) {
@@ -57,6 +70,12 @@ export async function saveRequestTransition(
         metadata: { from, to },
       },
     });
+    await recordWorkflowEvent(transaction, {
+      eventType: "REQUEST_STATUS_CHANGED",
+      requestId: id,
+      actorId,
+      payload: { from, to },
+    });
 
     return transaction.request.findUniqueOrThrow({ where: { id } });
   });
@@ -94,6 +113,12 @@ export function fulfillBloodRequest(
         entityId: requestId,
         metadata: { inventoryId, quantity },
       },
+    });
+    await recordWorkflowEvent(transaction, {
+      eventType: "REQUEST_STATUS_CHANGED",
+      requestId,
+      actorId,
+      payload: { from: PrismaRequestStatus.IN_TRANSIT, to: PrismaRequestStatus.FULFILLED },
     });
 
     return transaction.request.findUniqueOrThrow({ where: { id: requestId } });

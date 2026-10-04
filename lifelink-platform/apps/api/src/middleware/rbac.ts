@@ -5,20 +5,23 @@ function deny(
   response: Parameters<RequestHandler>[1],
   code: string,
   message: string,
+  traceId?: string,
 ) {
-  response.status(code === "AUTH_REQUIRED" ? 401 : 403).json({ code, message });
+  response
+    .status(code === "AUTH_REQUIRED" ? 401 : 403)
+    .json({ code, message, traceId });
 }
 
 // Enforce role permissions before a protected handler executes.
 export function authorizeAction(...allowedRoles: UserRole[]): RequestHandler {
   return (request, response, next) => {
     if (!request.auth) {
-      deny(response, "AUTH_REQUIRED", "Authentication required.");
+      deny(response, "AUTH_REQUIRED", "Authentication required.", request.traceId);
       return;
     }
 
     if (allowedRoles.length > 0 && !allowedRoles.includes(request.auth.role)) {
-      deny(response, "FORBIDDEN", "You are not authorized for this operation.");
+      deny(response, "FORBIDDEN", "You are not authorized for this operation.", request.traceId);
       return;
     }
 
@@ -34,7 +37,7 @@ export function authorizeInstitutionScope(
 ): RequestHandler {
   return (request, response, next) => {
     if (!request.auth) {
-      deny(response, "AUTH_REQUIRED", "Authentication required.");
+      deny(response, "AUTH_REQUIRED", "Authentication required.", request.traceId);
       return;
     }
 
@@ -48,6 +51,7 @@ export function authorizeInstitutionScope(
         response,
         "INSTITUTION_SCOPE_FORBIDDEN",
         "Institution access is restricted.",
+        request.traceId,
       );
       return;
     }
@@ -68,7 +72,7 @@ export function authorizeResourceAccess(
     next: Parameters<RequestHandler>[2],
   ) => {
     if (!request.auth) {
-      deny(response, "AUTH_REQUIRED", "Authentication required.");
+      deny(response, "AUTH_REQUIRED", "Authentication required.", request.traceId);
       return;
     }
 
@@ -84,6 +88,7 @@ export function authorizeResourceAccess(
         response,
         "FORBIDDEN",
         "The requested resource is not available to this account.",
+        request.traceId,
       );
       return;
     }

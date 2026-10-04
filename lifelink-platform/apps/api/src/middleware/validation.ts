@@ -31,17 +31,16 @@ export const profileUpdateSchema = z.object({
   phone: z.string().trim().min(7).max(30).optional(),
 });
 
-export const bloodRequestSchema = z.object({
+const bloodRequestFields = z.object({
   bloodGroup: z.enum(BLOOD_GROUPS),
   component: z.enum(BLOOD_COMPONENTS),
   quantity: z.number().int().positive(),
-  priority: z.enum(REQUEST_PRIORITIES),
+  priority: z.enum(REQUEST_PRIORITIES.filter((priority) => priority !== "EMERGENCY") as ["NORMAL", "URGENT"]),
   location: z.string().trim().min(1).max(200),
   latitude: z.number().min(-90).max(90).optional(),
   longitude: z.number().min(-180).max(180).optional(),
   radiusKm: z.number().positive().max(500).optional(),
   contactNumber: z.string().trim().min(7).max(30),
-  recipientId: z.string().uuid().optional(),
 });
 
 export const bloodInventorySchema = z.object({
@@ -56,7 +55,63 @@ export const inventorySearchSchema = z.object({
   bloodGroup: z.enum(BLOOD_GROUPS),
   component: z.enum(BLOOD_COMPONENTS),
   quantity: z.coerce.number().int().positive(),
+  latitude: z.coerce.number().min(-90).max(90).optional(),
+  longitude: z.coerce.number().min(-180).max(180).optional(),
   radiusKm: z.coerce.number().positive().max(500).optional(),
+}).superRefine((value, context) => {
+  const hasLatitude = value.latitude !== undefined;
+  const hasLongitude = value.longitude !== undefined;
+  if (hasLatitude !== hasLongitude) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: [hasLatitude ? "longitude" : "latitude"],
+      message: "Both coordinates are required for a location search.",
+    });
+  }
+  if (value.radiusKm !== undefined && !hasLatitude) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["radiusKm"],
+      message: "A search radius requires coordinates.",
+    });
+  }
+});
+
+function validateRequestLocation(
+  value: { latitude?: number; longitude?: number; radiusKm?: number },
+  context: z.RefinementCtx,
+) {
+  const hasLatitude = value.latitude !== undefined;
+  const hasLongitude = value.longitude !== undefined;
+  if (hasLatitude !== hasLongitude) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: [hasLatitude ? "longitude" : "latitude"],
+      message: "Both coordinates are required for a location search.",
+    });
+  }
+  if (value.radiusKm !== undefined && !hasLatitude) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["radiusKm"],
+      message: "A search radius requires coordinates.",
+    });
+  }
+}
+
+export const bloodRequestSchema = bloodRequestFields.superRefine(
+  validateRequestLocation,
+);
+export const emergencyBloodRequestSchema = bloodRequestFields
+  .omit({ priority: true })
+  .superRefine(validateRequestLocation);
+
+export const bloodOfferResponseSchema = z.object({
+  action: z.enum(["ACCEPT", "REJECT"]),
+});
+
+export const bloodOfferEvaluationSchema = z.object({
+  action: z.enum(["ACCEPT", "REJECT"]),
 });
 
 // Validate request shape before it reaches a feature handler.
@@ -73,6 +128,25 @@ export function validateRequest(schema: ZodTypeAny): RequestHandler {
     }
 
     request.body = result.data;
+    next();
+  };
+}
+
+// Validate UUID path parameters before they are passed to Prisma.
+export function validateUuidParams(...names: string[]): RequestHandler {
+  const shape: Record<string, z.ZodString> = {};
+  for (const name of names) shape[name] = z.string().uuid();
+  const schema = z.object(shape);
+  return (request, response, next) => {
+    const result = schema.safeParse(request.params);
+    if (!result.success) {
+      response.status(400).json({
+        code: "VALIDATION_FAILED",
+        message: "Request validation failed.",
+        fieldErrors: result.error.flatten().fieldErrors,
+      });
+      return;
+    }
     next();
   };
 }

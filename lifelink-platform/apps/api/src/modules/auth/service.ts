@@ -9,6 +9,7 @@ import {
 } from "@lifelink/database";
 import { getRuntimeConfig } from "../../config";
 import { recordAuditEvent } from "../audit/service";
+import { ApiError } from "../../middleware/api-error";
 
 export interface RegistrationInput {
   name: string;
@@ -68,7 +69,7 @@ export async function loginUser(email: string, password: string) {
     : false;
 
   if (!user || !valid || user.status !== UserStatus.ACTIVE) {
-    throw new Error("Invalid credentials.");
+    throw new ApiError(401, "AUTH_INVALID", "Invalid credentials.");
   }
 
   await recordAuditEvent({
