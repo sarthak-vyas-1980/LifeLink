@@ -7,6 +7,7 @@ import {
 import { authenticateRequest } from "../../middleware/auth";
 import {
   authorizeAction,
+  authorizeInstitutionCapability,
   authorizeInstitutionScope,
 } from "../../middleware/rbac";
 import {
@@ -30,6 +31,7 @@ export function registerBloodInventoryRoutes(router = Router()) {
     "/",
     authenticateRequest(),
     authorizeAction(...institutionRoles),
+    authorizeInstitutionCapability("blood"),
     validateRequest(bloodInventorySchema),
     authorizeInstitutionScope((request) => request.body.institutionId),
     asyncRoute(createBloodInventory),
@@ -38,6 +40,7 @@ export function registerBloodInventoryRoutes(router = Router()) {
     "/:inventoryId",
     authenticateRequest(),
     authorizeAction(...institutionRoles),
+    authorizeInstitutionCapability("blood"),
     validateUuidParams("inventoryId"),
     validateRequest(bloodInventorySchema),
     authorizeInstitutionScope((request) => request.body.institutionId),
@@ -62,6 +65,7 @@ export async function createBloodInventory(
 
   await recordAuditEvent({
     actorId: request.auth?.userId,
+    actorInstitutionId: request.auth?.institutionId,
     action: "BLOOD_INVENTORY_CREATED",
     entityType: "BloodInventory",
     entityId: inventory.id,
@@ -88,6 +92,7 @@ export async function updateBloodInventory(
 
   await recordAuditEvent({
     actorId: request.auth?.userId,
+    actorInstitutionId: request.auth?.institutionId,
     action: "BLOOD_INVENTORY_UPDATED",
     entityType: "BloodInventory",
     entityId: inventory.id,

@@ -1,438 +1,860 @@
 generator client {
-	provider = "prisma-client-js"
+  provider = "prisma-client-js"
 }
 
 datasource db {
-	provider = "postgresql"
-	url      = env("DATABASE_URL")
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
 
 enum UserRole {
-	HOSPITAL_USER
-	BLOOD_BANK_USER
-	ORGAN_CENTRE_USER
-	DONOR_RECIPIENT
-	ADMINISTRATOR
+  USER
+  ADMIN
 }
 
 enum UserStatus {
-	ACTIVE
-	INACTIVE
-	RESTRICTED
+  ACTIVE
+  INACTIVE
+  RESTRICTED
 }
 
 enum InstitutionType {
-	HOSPITAL
-	BLOOD_BANK
-	ORGAN_CENTRE
+  HOSPITAL
+  BLOOD_BANK
+  ORGAN_CENTRE
 }
 
 enum InstitutionStatus {
-	ACTIVE
-	INACTIVE
-	PENDING_VERIFICATION
+  ACTIVE
+  INACTIVE
+  PENDING_VERIFICATION
 }
 
 enum BloodGroup {
-	A_POSITIVE
-	A_NEGATIVE
-	B_POSITIVE
-	B_NEGATIVE
-	AB_POSITIVE
-	AB_NEGATIVE
-	O_POSITIVE
-	O_NEGATIVE
+  A_POSITIVE
+  A_NEGATIVE
+  B_POSITIVE
+  B_NEGATIVE
+  AB_POSITIVE
+  AB_NEGATIVE
+  O_POSITIVE
+  O_NEGATIVE
 }
 
 enum BloodComponent {
-	WHOLE_BLOOD
-	RED_BLOOD_CELLS
-	PLASMA
-	PLATELETS
-	CRYOPRECIPITATE
+  WHOLE_BLOOD
+  RED_BLOOD_CELLS
+  PLASMA
+  PLATELETS
+  CRYOPRECIPITATE
 }
 
 enum BloodInventoryStatus {
-	AVAILABLE
-	RESERVED
-	UNAVAILABLE
-	EXPIRED
+  AVAILABLE
+  RESERVED
+  UNAVAILABLE
+  EXPIRED
 }
 
 enum RequestType {
-	BLOOD
-	ORGAN
+  BLOOD
+  ORGAN
 }
 
 enum RequestPriority {
-	NORMAL
-	URGENT
-	EMERGENCY
+  NORMAL
+  URGENT
+  EMERGENCY
 }
 
 enum RequestStatus {
-	CREATED
-	UNDER_REVIEW
-	SEARCHING_MATCHING
-	INSTITUTIONS_NOTIFIED
-	OFFERS_RECEIVED
-	OFFER_EVALUATION
-	OFFER_ACCEPTED
-	RESERVED
-	IN_TRANSIT
-	FULFILLED
-	REOPENED
-	CANCELLED
-	REJECTED
-	EXPIRED
+  CREATED
+  UNDER_REVIEW
+  SEARCHING_MATCHING
+  INSTITUTIONS_NOTIFIED
+  OFFERS_RECEIVED
+  OFFER_EVALUATION
+  OFFER_ACCEPTED
+  RESERVED
+  IN_TRANSIT
+  FULFILLED
+  REOPENED
+  CANCELLED
+  REJECTED
+  EXPIRED
 }
 
 enum MatchStatus {
-	PENDING
-	ACCEPTED
-	REJECTED
-	EXPIRED
+  PENDING
+  ACCEPTED
+  REJECTED
+  EXPIRED
 }
 
 enum DonationType {
-	BLOOD
-	ORGAN
+  BLOOD
+  ORGAN
 }
 
 enum DonationStatus {
-	PENDING
-	ACCEPTED
-	REJECTED
-	COMPLETED
-	CANCELLED
+  PENDING
+  ACCEPTED
+  REJECTED
+  COMPLETED
+  CANCELLED
 }
 
 enum OrganInventoryStatus {
-	AVAILABLE
-	ALLOCATED
-	UNAVAILABLE
+  AVAILABLE
+  ALLOCATED
+  UNAVAILABLE
+}
+
+enum OrganType {
+  KIDNEY
+  LIVER
+  HEART
+  LUNG
+  PANCREAS
+  INTESTINE
+  CORNEA
+  BONE_MARROW
+  OTHER
+}
+
+enum OrganStatus {
+  REGISTERED
+  ASSESSMENT_PENDING
+  ELIGIBLE_FOR_COORDINATION
+  AVAILABLE
+  MATCHING
+  OFFERED
+  ACCEPTED
+  RETRIEVAL_SCHEDULED
+  RETRIEVAL_IN_PROGRESS
+  RETRIEVED
+  PRESERVING
+  IN_TRANSIT
+  ARRIVED
+  FINAL_ASSESSMENT
+  ALLOCATED
+  TRANSPLANTED
+  COMPLETED
+  UNAVAILABLE
+  EXPIRED
+  DISCARDED
+  CANCELLED
+}
+
+enum OrganDonorStatus {
+  REGISTERED
+  ACTIVE
+  CLOSED
+}
+
+enum ConsentStatus {
+  PENDING
+  RECORDED
+  VERIFIED
+  REJECTED
+  WITHDRAWN
+  EXPIRED
+}
+
+enum OrganAuthorizationStatus {
+  PENDING
+  AUTHORIZED
+  REJECTED
+  WITHDRAWN
+}
+
+enum OrganRecipientStatus {
+  ACTIVE
+  MATCHED
+  CLOSED
+  CANCELLED
+}
+
+enum OrganMatchStatus {
+  GENERATED
+  UNDER_REVIEW
+  SHORTLISTED
+  REJECTED
+  CONVERTED_TO_OFFER
+  EXPIRED
+  CANCELLED
+}
+
+enum OrganOfferStatus {
+  DRAFT
+  SENT
+  UNDER_REVIEW
+  ACCEPTED
+  REJECTED
+  EXPIRED
+  CANCELLED
+}
+
+enum ProcurementStatus {
+  SCHEDULED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+  FAILED
+}
+
+enum PreservationMethod {
+  STATIC_COLD_STORAGE
+  HYPOTHERMIC_MACHINE_PERFUSION
+  NORMOTHERMIC_MACHINE_PERFUSION
+  CORNEAL_STORAGE_MEDIUM
+  OTHER
+}
+
+enum PreservationStatus {
+  NOT_STARTED
+  NORMAL
+  WARNING
+  CRITICAL
+  EXPIRED
 }
 
 enum AllocationStatus {
-	CONFIRMED
-	CANCELLED
-	COMPLETED
+  CONFIRMED
+  CANCELLED
+  COMPLETED
 }
 
 enum NotificationType {
-	EMAIL
-	SMS
-	IN_APP
+  EMAIL
+  SMS
+  IN_APP
 }
 
 enum NotificationStatus {
-	UNREAD
-	READ
-	DELIVERED
-	FAILED
+  UNREAD
+  READ
+  DELIVERED
+  FAILED
 }
 
 model User {
-	id                 String             @id @default(uuid()) @db.Uuid
-	name               String
-	email              String             @unique
-	phone              String?
-	passwordHash       String
-	role               UserRole
-	status             UserStatus         @default(ACTIVE)
-	institutionId      String?            @db.Uuid
-	createdAt          DateTime           @default(now())
-	updatedAt          DateTime           @updatedAt
-	institution        Institution?       @relation(fields: [institutionId], references: [id])
-	hospitalProfile    HospitalUser?
-	donorProfile       DonorRecipient?
-	administrator      Administrator?
-	createdRequests    Request[]          @relation("RequestCreator")
-	requestRecipients  RequestRecipient[]
-	notifications      Notification[]
-	documents          UserDocument[]
-	donations          Donation[]         @relation("DonorDonations")
-	auditEvents        AuditLog[]
+  id                   String               @id @default(uuid()) @db.Uuid
+  name                 String
+  email                String               @unique
+  phone                String
+  passwordHash         String
+  role                 UserRole
+  status               UserStatus           @default(ACTIVE)
+  createdAt            DateTime             @default(now())
+  updatedAt            DateTime             @updatedAt
+  donorProfile         DonorProfile?
+  recipientProfile     RecipientProfile?
+  administrator        Administrator?
+  createdRequests      Request[]            @relation("RequestCreator")
+  requestRecipients    RequestRecipient[]
+  notifications        Notification[]
+  documents            UserDocument[]
+  donations            Donation[]           @relation("DonorDonations")
+  auditEvents          AuditLog[]
+  organDonors          OrganDonor[]
+  organRecipients      OrganRecipient[]
+  consentRecords       OrganConsent[]       @relation("ConsentAuthor")
+  reviewedOrganMatches OrganMatch[]         @relation("OrganMatchReviewer")
+  respondedOrganOffers OrganOffer[]         @relation("OfferResponder")
+  organWorkflowEvents  OrganWorkflowEvent[]
+  workflowEvents       WorkflowEvent[]
 
-	@@index([institutionId, role, status])
+  @@index([role, status])
 }
 
 model Institution {
-	id                String              @id @default(uuid()) @db.Uuid
-	name              String
-	type              InstitutionType
-	address           String
-	latitude          Float?
-	longitude         Float?
-	contactPerson     String?
-	contactNumber     String?
-	status            InstitutionStatus   @default(PENDING_VERIFICATION)
-	createdAt         DateTime            @default(now())
-	updatedAt         DateTime            @updatedAt
-	users             User[]
-	hospitalUsers     HospitalUser[]
-	bloodInventory    BloodInventory[]
-	organInventory    OrganInventory[]
-	providerMatches   Match[]             @relation("ProviderMatches")
-	donations        Donation[]           @relation("DonationInstitution")
-	allocations      Allocation[]
+  id                   String                    @id @default(uuid()) @db.Uuid
+  name                 String
+  type                 InstitutionType
+  address              String
+  latitude             Float?
+  longitude            Float?
+  contactPerson        String?
+  contactNumber        String?
+  status               InstitutionStatus         @default(PENDING_VERIFICATION)
+  createdAt            DateTime                  @default(now())
+  updatedAt            DateTime                  @updatedAt
+  account              InstitutionAccount?
+  institutionRequests  Request[]                 @relation("InstitutionRequestCreator")
+  notifications        Notification[]
+  auditEvents          AuditLog[]
+  workflowEvents       WorkflowEvent[]
+  hospitalProfile      HospitalProfile?
+  bloodBankProfile     BloodBankProfile?
+  organCentreProfile   OrganCentreProfile?
+  bloodInventory       BloodInventory[]
+  organInventory       OrganInventory[]
+  providerMatches      Match[]                   @relation("ProviderMatches")
+  donations            Donation[]                @relation("DonationInstitution")
+  allocations          Allocation[]
+  currentOrgans        OrganRecord[]             @relation("OrganCurrentLocation")
+  destinationOrgans    OrganRecord[]             @relation("OrganDestination")
+  offeringOrganOffers  OrganOffer[]              @relation("OfferOfferingCentre")
+  receivingOrganOffers OrganOffer[]              @relation("OfferReceivingCentre")
+  organProcurements    OrganProcurement[]
+  organWorkflowEvents  OrganWorkflowEvent[]
+  organDonors          OrganDonor[]
+  organRecords         OrganRecord[]
+  organRecipients      OrganRecipient[]
+  organPolicies        OrganPreservationPolicy[]
 
-	@@index([type, status])
-	@@index([latitude, longitude])
+  @@index([type, status])
+  @@index([latitude, longitude])
 }
 
-model HospitalUser {
-	id              String      @id @default(uuid()) @db.Uuid
-	userId          String      @unique @db.Uuid
-	hospitalId      String      @db.Uuid
-	department      String?
-	licenseNumber   String?
-	user            User        @relation(fields: [userId], references: [id], onDelete: Cascade)
-	hospital        Institution @relation(fields: [hospitalId], references: [id])
+// Organizations authenticate through their own account. They are not Users.
+model InstitutionAccount {
+  id            String      @id @default(uuid()) @db.Uuid
+  institutionId String      @unique @db.Uuid
+  email         String      @unique
+  phone         String
+  passwordHash  String
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+  institution   Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
 }
 
-model DonorRecipient {
-	id              String      @id @default(uuid()) @db.Uuid
-	userId          String      @unique @db.Uuid
-	dateOfBirth     DateTime?
-	bloodGroup      BloodGroup?
-	donorType       String?
-	medicalHistory  String?
-	address         String?
-	user            User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+model DonorProfile {
+  id             String      @id @default(uuid()) @db.Uuid
+  userId         String      @unique @db.Uuid
+  bloodGroup     BloodGroup?
+  dateOfBirth    DateTime?
+  donorType      String?
+  medicalHistory String?
+  address        String?
+  user           User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model RecipientProfile {
+  id          String    @id @default(uuid()) @db.Uuid
+  userId      String    @unique @db.Uuid
+  dateOfBirth DateTime?
+  address     String?
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model Administrator {
-	id            String @id @default(uuid()) @db.Uuid
-	userId        String @unique @db.Uuid
-	employeeId    String?
-	designation   String?
-	user          User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id          String  @id @default(uuid()) @db.Uuid
+  userId      String  @unique @db.Uuid
+  employeeId  String?
+  designation String?
+  user        User    @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model BloodInventory {
-	id             String               @id @default(uuid()) @db.Uuid
-	institutionId  String               @db.Uuid
-	bloodGroup     BloodGroup
-	component      BloodComponent
-	unitsAvailable Int
-	reservedUnits  Int                  @default(0)
-	lastUpdated    DateTime             @updatedAt
-	expiryDate     DateTime?
-	status         BloodInventoryStatus  @default(AVAILABLE)
-	institution    Institution          @relation(fields: [institutionId], references: [id])
-	matches        Match[]
-	donationItems  DonationInventory[]
+  id             String               @id @default(uuid()) @db.Uuid
+  institutionId  String               @db.Uuid
+  bloodGroup     BloodGroup
+  component      BloodComponent
+  unitsAvailable Int
+  reservedUnits  Int                  @default(0)
+  lastUpdated    DateTime             @updatedAt
+  expiryDate     DateTime?
+  status         BloodInventoryStatus @default(AVAILABLE)
+  institution    Institution          @relation(fields: [institutionId], references: [id])
+  matches        Match[]
+  donationItems  DonationInventory[]
 
-	@@index([bloodGroup, component, status])
-	@@index([bloodGroup, component, reservedUnits])
-	@@index([institutionId, expiryDate])
+  @@index([bloodGroup, component, status])
+  @@index([bloodGroup, component, reservedUnits])
+  @@index([institutionId, expiryDate])
 }
 
 model OrganInventory {
-	id                    String               @id @default(uuid()) @db.Uuid
-	institutionId         String               @db.Uuid
-	organType             String
-	bloodGroupCompatibility String?
-	quantity              Int                  @default(1)
-	status                OrganInventoryStatus @default(AVAILABLE)
-	lastUpdated           DateTime             @updatedAt
-	institution           Institution          @relation(fields: [institutionId], references: [id])
-	matches               Match[]
+  id                      String               @id @default(uuid()) @db.Uuid
+  institutionId           String               @db.Uuid
+  organType               String
+  bloodGroupCompatibility String?
+  quantity                Int                  @default(1)
+  status                  OrganInventoryStatus @default(AVAILABLE)
+  lastUpdated             DateTime             @updatedAt
+  institution             Institution          @relation(fields: [institutionId], references: [id])
+  matches                 Match[]
 
-	@@index([organType, status])
+  @@index([organType, status])
 }
 
 model Request {
-	id              String             @id @default(uuid()) @db.Uuid
-	requestType     RequestType
-	bloodGroup      BloodGroup?
-	component       BloodComponent?
-	organType       String?
-	quantity        Int
-	priority        RequestPriority     @default(NORMAL)
-	location        String
-	latitude        Float?
-	longitude       Float?
-	radiusKm        Float?
-	contactNumber   String
-	requestDate     DateTime           @default(now())
-	status          RequestStatus      @default(CREATED)
-	createdById     String             @db.Uuid
-	createdBy       User               @relation("RequestCreator", fields: [createdById], references: [id])
-	matches         Match[]
-	recipients      RequestRecipient[]
-	donations       Donation[]
-	allocations     Allocation[]
+  id                     String             @id @default(uuid()) @db.Uuid
+  requestType            RequestType
+  bloodGroup             BloodGroup?
+  component              BloodComponent?
+  organType              String?
+  quantity               Int
+  priority               RequestPriority    @default(NORMAL)
+  location               String
+  latitude               Float?
+  longitude              Float?
+  radiusKm               Float?
+  contactNumber          String
+  requestDate            DateTime           @default(now())
+  status                 RequestStatus      @default(CREATED)
+  createdById            String?            @db.Uuid
+  createdBy              User?              @relation("RequestCreator", fields: [createdById], references: [id])
+  createdByInstitutionId String?            @db.Uuid
+  createdByInstitution   Institution?       @relation("InstitutionRequestCreator", fields: [createdByInstitutionId], references: [id])
+  matches                Match[]
+  recipients             RequestRecipient[]
+  donations              Donation[]
+  allocations            Allocation[]
+  organRecipients        OrganRecipient[]
 
-	@@index([requestType, status, priority])
-	@@index([bloodGroup, component, status])
-	@@index([latitude, longitude])
+  @@index([requestType, status, priority])
+  @@index([bloodGroup, component, status])
+  @@index([latitude, longitude])
 }
 
 model RequestRecipient {
-	id             String  @id @default(uuid()) @db.Uuid
-	requestId      String  @db.Uuid
-	userId         String? @db.Uuid
-	patientName    String
-	age            Int?
-	gender         String?
-	medicalDetails String?
-	request        Request @relation(fields: [requestId], references: [id], onDelete: Cascade)
-	user           User?   @relation(fields: [userId], references: [id])
+  id             String  @id @default(uuid()) @db.Uuid
+  requestId      String  @db.Uuid
+  userId         String? @db.Uuid
+  patientName    String
+  age            Int?
+  gender         String?
+  medicalDetails String?
+  request        Request @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  user           User?   @relation(fields: [userId], references: [id])
 
-	@@index([requestId])
+  @@index([requestId])
 }
 
 model Match {
-	id                  String               @id @default(uuid()) @db.Uuid
-	requestId           String               @db.Uuid
-	providerInstitutionId String?             @db.Uuid
-	bloodInventoryId    String?              @db.Uuid
-	organInventoryId    String?              @db.Uuid
-	compatibilityScore  Float?
-	status              MatchStatus          @default(PENDING)
-	matchedDate         DateTime             @default(now())
-	reservedAt          DateTime?
-	reservationExpiresAt DateTime?
-	dispatchedAt        DateTime?
-	receivedAt           DateTime?
-	request             Request              @relation(fields: [requestId], references: [id], onDelete: Cascade)
-	providerInstitution Institution?         @relation("ProviderMatches", fields: [providerInstitutionId], references: [id])
-	bloodInventory     BloodInventory?      @relation(fields: [bloodInventoryId], references: [id])
-	organInventory     OrganInventory?      @relation(fields: [organInventoryId], references: [id])
-	donations          Donation[]
-	allocations        Allocation[]
+  id                    String          @id @default(uuid()) @db.Uuid
+  requestId             String          @db.Uuid
+  providerInstitutionId String?         @db.Uuid
+  bloodInventoryId      String?         @db.Uuid
+  organInventoryId      String?         @db.Uuid
+  compatibilityScore    Float?
+  status                MatchStatus     @default(PENDING)
+  matchedDate           DateTime        @default(now())
+  reservedAt            DateTime?
+  reservationExpiresAt  DateTime?
+  dispatchedAt          DateTime?
+  receivedAt            DateTime?
+  request               Request         @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  providerInstitution   Institution?    @relation("ProviderMatches", fields: [providerInstitutionId], references: [id])
+  bloodInventory        BloodInventory? @relation(fields: [bloodInventoryId], references: [id])
+  organInventory        OrganInventory? @relation(fields: [organInventoryId], references: [id])
+  donations             Donation[]
+  allocations           Allocation[]
 
-	@@index([requestId, status])
-	@@index([providerInstitutionId, status])
-	@@index([status, reservationExpiresAt])
+  @@index([requestId, status])
+  @@index([providerInstitutionId, status])
+  @@index([status, reservationExpiresAt])
 }
 
 model Donation {
-	id                String              @id @default(uuid()) @db.Uuid
-	requestId         String?             @db.Uuid
-	matchId           String?             @db.Uuid
-	donorId           String              @db.Uuid
-	providerInstitutionId String?         @db.Uuid
-	donationType      DonationType
-	bloodGroup        BloodGroup?
-	organType         String?
-	status            DonationStatus      @default(PENDING)
-	remarks           String?
-	createdAt         DateTime            @default(now())
-	request           Request?            @relation(fields: [requestId], references: [id])
-	match             Match?              @relation(fields: [matchId], references: [id])
-	donor             User                @relation("DonorDonations", fields: [donorId], references: [id])
-	providerInstitution Institution?      @relation("DonationInstitution", fields: [providerInstitutionId], references: [id])
-	inventoryItems    DonationInventory[]
+  id                    String              @id @default(uuid()) @db.Uuid
+  requestId             String?             @db.Uuid
+  matchId               String?             @db.Uuid
+  donorId               String              @db.Uuid
+  providerInstitutionId String?             @db.Uuid
+  donationType          DonationType
+  bloodGroup            BloodGroup?
+  organType             String?
+  status                DonationStatus      @default(PENDING)
+  remarks               String?
+  createdAt             DateTime            @default(now())
+  request               Request?            @relation(fields: [requestId], references: [id])
+  match                 Match?              @relation(fields: [matchId], references: [id])
+  donor                 User                @relation("DonorDonations", fields: [donorId], references: [id])
+  providerInstitution   Institution?        @relation("DonationInstitution", fields: [providerInstitutionId], references: [id])
+  inventoryItems        DonationInventory[]
 
-	@@index([requestId, status])
-	@@index([donorId, donationType])
+  @@index([requestId, status])
+  @@index([donorId, donationType])
 }
 
 model DonationInventory {
-	id              String                @id @default(uuid()) @db.Uuid
-	donationId      String                @db.Uuid
-	bloodInventoryId String?              @db.Uuid
-	bloodGroup      BloodGroup?
-	organType       String?
-	quantity        Int
-	expiryDate      DateTime?
-	status          BloodInventoryStatus  @default(AVAILABLE)
-	donation        Donation              @relation(fields: [donationId], references: [id], onDelete: Cascade)
-	bloodInventory  BloodInventory?       @relation(fields: [bloodInventoryId], references: [id])
+  id               String               @id @default(uuid()) @db.Uuid
+  donationId       String               @db.Uuid
+  bloodInventoryId String?              @db.Uuid
+  bloodGroup       BloodGroup?
+  organType        String?
+  quantity         Int
+  expiryDate       DateTime?
+  status           BloodInventoryStatus @default(AVAILABLE)
+  donation         Donation             @relation(fields: [donationId], references: [id], onDelete: Cascade)
+  bloodInventory   BloodInventory?      @relation(fields: [bloodInventoryId], references: [id])
 }
 
 model Allocation {
-	id               String           @id @default(uuid()) @db.Uuid
-	matchId          String           @db.Uuid
-	institutionId    String           @db.Uuid
-	requestId        String           @db.Uuid
-	allocatedQuantity Int
-	allocationDate   DateTime         @default(now())
-	status           AllocationStatus @default(CONFIRMED)
-	match            Match            @relation(fields: [matchId], references: [id])
-	institution      Institution      @relation(fields: [institutionId], references: [id])
-	request          Request           @relation(fields: [requestId], references: [id])
+  id                String           @id @default(uuid()) @db.Uuid
+  matchId           String           @db.Uuid
+  institutionId     String           @db.Uuid
+  requestId         String           @db.Uuid
+  allocatedQuantity Int
+  allocationDate    DateTime         @default(now())
+  status            AllocationStatus @default(CONFIRMED)
+  match             Match            @relation(fields: [matchId], references: [id])
+  institution       Institution      @relation(fields: [institutionId], references: [id])
+  request           Request          @relation(fields: [requestId], references: [id])
 }
 
 model Notification {
-	id          String               @id @default(uuid()) @db.Uuid
-	userId      String               @db.Uuid
-	eventId     String?              @db.Uuid
-	eventType   String?
-	requestId   String?              @db.Uuid
-	title       String
-	message     String
-	payload     Json?
-	type        NotificationType
-	status      NotificationStatus   @default(UNREAD)
-	createdAt   DateTime             @default(now())
-	user        User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id            String             @id @default(uuid()) @db.Uuid
+  userId        String?            @db.Uuid
+  institutionId String?            @db.Uuid
+  eventId       String?            @db.Uuid
+  eventType     String?
+  requestId     String?            @db.Uuid
+  title         String
+  message       String
+  payload       Json?
+  type          NotificationType
+  status        NotificationStatus @default(UNREAD)
+  createdAt     DateTime           @default(now())
+  user          User?              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  institution   Institution?       @relation(fields: [institutionId], references: [id], onDelete: Cascade)
 
-	@@index([userId, status, createdAt])
-	@@index([requestId, createdAt])
-	@@unique([userId, eventId])
+  @@unique([userId, eventId])
+  @@unique([institutionId, eventId])
+  @@index([userId, status, createdAt])
+  @@index([requestId, createdAt])
 }
 
 model WorkflowEvent {
-	id          String   @id @default(uuid()) @db.Uuid
-	eventType   String
-	requestId   String?  @db.Uuid
-	actorId     String?  @db.Uuid
-	payload     Json
-	createdAt   DateTime @default(now())
-	publishedAt DateTime?
+  id                 String       @id @default(uuid()) @db.Uuid
+  eventType          String
+  requestId          String?      @db.Uuid
+  actorId            String?      @db.Uuid
+  actorInstitutionId String?      @db.Uuid
+  payload            Json
+  createdAt          DateTime     @default(now())
+  publishedAt        DateTime?
+  actor              User?        @relation(fields: [actorId], references: [id], onDelete: SetNull)
+  actorInstitution   Institution? @relation(fields: [actorInstitutionId], references: [id], onDelete: SetNull)
 
-	@@index([publishedAt, createdAt])
-	@@index([requestId, createdAt])
+  @@index([publishedAt, createdAt])
+  @@index([requestId, createdAt])
 }
 
 model UserDocument {
-	id             String   @id @default(uuid()) @db.Uuid
-	userId         String   @db.Uuid
-	title          String
-	content        String?
-	category       String
-	sourceDocument String?
-	createdAt      DateTime @default(now())
-	user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id             String   @id @default(uuid()) @db.Uuid
+  userId         String   @db.Uuid
+  title          String
+  content        String?
+  category       String
+  sourceDocument String?
+  createdAt      DateTime @default(now())
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model RagKnowledgeBase {
-	id             String   @id @default(uuid()) @db.Uuid
-	documentName   String
-	source         String
-	title          String
-	content        String
-	embeddedVector String?
-	createdAt      DateTime @default(now())
-	updatedAt      DateTime @updatedAt
+  id             String   @id @default(uuid()) @db.Uuid
+  documentName   String
+  source         String
+  title          String
+  content        String
+  embeddedVector String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 }
 
 model AuditLog {
-	id            String   @id @default(uuid()) @db.Uuid
-	actorId       String?  @db.Uuid
-	action        String
-	entityType    String
-	entityId      String
-	metadata      Json?
-	createdAt     DateTime @default(now())
-	actor         User?    @relation(fields: [actorId], references: [id])
+  id                 String       @id @default(uuid()) @db.Uuid
+  actorId            String?      @db.Uuid
+  actorInstitutionId String?      @db.Uuid
+  action             String
+  entityType         String
+  entityId           String
+  metadata           Json?
+  createdAt          DateTime     @default(now())
+  actor              User?        @relation(fields: [actorId], references: [id])
+  actorInstitution   Institution? @relation(fields: [actorInstitutionId], references: [id])
 
-	@@index([entityType, entityId, createdAt])
-	@@index([actorId, createdAt])
+  @@index([entityType, entityId, createdAt])
+  @@index([actorId, createdAt])
 }
 
 model Prediction {
-	id             String   @id @default(uuid()) @db.Uuid
-	category       String
-	bloodGroup     BloodGroup?
-	component      BloodComponent?
-	location       String?
-	forecastPeriod String?
-	result         Json
-	modelVersion   String
-	createdAt      DateTime @default(now())
+  id             String          @id @default(uuid()) @db.Uuid
+  category       String
+  bloodGroup     BloodGroup?
+  component      BloodComponent?
+  location       String?
+  forecastPeriod String?
+  result         Json
+  modelVersion   String
+  createdAt      DateTime        @default(now())
+}
+
+// A hospital may enable either service independently, both, or neither.
+model HospitalProfile {
+  id               String                @id @default(uuid()) @db.Uuid
+  institutionId    String                @unique @db.Uuid
+  hospitalType     String?
+  emergencySupport Boolean               @default(false)
+  icuAvailable     Boolean               @default(false)
+  institution      Institution           @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  bloodService     HospitalBloodService?
+  organService     HospitalOrganService?
+}
+
+model HospitalBloodService {
+  id             String          @id @default(uuid()) @db.Uuid
+  hospitalId     String          @unique @db.Uuid
+  operatingHours String?
+  serviceContact String?
+  hospital       HospitalProfile @relation(fields: [hospitalId], references: [id], onDelete: Cascade)
+}
+
+model HospitalOrganService {
+  id                 String          @id @default(uuid()) @db.Uuid
+  hospitalId         String          @unique @db.Uuid
+  transplantFacility Boolean         @default(false)
+  transplantPrograms String[]        @default([])
+  hospital           HospitalProfile @relation(fields: [hospitalId], references: [id], onDelete: Cascade)
+}
+
+model BloodBankProfile {
+  id              String      @id @default(uuid()) @db.Uuid
+  institutionId   String      @unique @db.Uuid
+  storageCapacity Int?
+  operatingHours  String?
+  institution     Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+}
+
+model OrganCentreProfile {
+  id                 String      @id @default(uuid()) @db.Uuid
+  institutionId      String      @unique @db.Uuid
+  centreType         String?
+  transplantPrograms String[]    @default([])
+  institution        Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+}
+
+// Organ coordination records are separate from blood inventory and matching.
+model OrganDonor {
+  id                  String                   @id @default(uuid()) @db.Uuid
+  reference           String                   @unique
+  userId              String?                  @unique @db.Uuid
+  institutionId       String                   @db.Uuid
+  donorType           String
+  consentStatus       ConsentStatus            @default(PENDING)
+  authorizationStatus OrganAuthorizationStatus @default(PENDING)
+  consentDate         DateTime?
+  authorizationDate   DateTime?
+  consentDocumentRef  String?
+  status              OrganDonorStatus         @default(REGISTERED)
+  bloodGroup          BloodGroup?
+  createdAt           DateTime                 @default(now())
+  updatedAt           DateTime                 @updatedAt
+  user                User?                    @relation(fields: [userId], references: [id])
+  institution         Institution              @relation(fields: [institutionId], references: [id])
+  consents            OrganConsent[]
+  organs              OrganRecord[]
+
+  @@index([institutionId, status, createdAt])
+  @@index([consentStatus, authorizationStatus])
+}
+
+model OrganConsent {
+  id                String        @id @default(uuid()) @db.Uuid
+  donorId           String        @db.Uuid
+  status            ConsentStatus @default(PENDING)
+  consentType       String
+  recordedAt        DateTime?
+  verifiedAt        DateTime?
+  authorizedById    String?       @db.Uuid
+  documentReference String?
+  notes             String?
+  createdAt         DateTime      @default(now())
+  donor             OrganDonor    @relation(fields: [donorId], references: [id], onDelete: Cascade)
+  authorizedBy      User?         @relation("ConsentAuthor", fields: [authorizedById], references: [id])
+
+  @@index([donorId, status, createdAt])
+}
+
+model OrganRecord {
+  id                      String               @id @default(uuid()) @db.Uuid
+  reference               String               @unique
+  donorId                 String               @db.Uuid
+  institutionId           String               @db.Uuid
+  organType               OrganType
+  status                  OrganStatus          @default(REGISTERED)
+  bloodGroup              BloodGroup?
+  retrievalTime           DateTime?
+  preservationStartTime   DateTime?
+  preservationMethod      PreservationMethod?
+  preservationSolution    String?
+  coldIschemiaStart       DateTime?
+  currentLocationId       String?              @db.Uuid
+  destinationCentreId     String?              @db.Uuid
+  allocatedRecipientId    String?              @db.Uuid
+  qualityStatus           String?
+  medicalAssessmentStatus String?
+  notes                   String?
+  createdAt               DateTime             @default(now())
+  updatedAt               DateTime             @updatedAt
+  donor                   OrganDonor           @relation(fields: [donorId], references: [id])
+  institution             Institution          @relation(fields: [institutionId], references: [id])
+  currentLocation         Institution?         @relation("OrganCurrentLocation", fields: [currentLocationId], references: [id])
+  destinationCentre       Institution?         @relation("OrganDestination", fields: [destinationCentreId], references: [id])
+  allocatedRecipient      OrganRecipient?      @relation(fields: [allocatedRecipientId], references: [id])
+  matches                 OrganMatch[]
+  offers                  OrganOffer[]
+  procurements            OrganProcurement[]
+  events                  OrganWorkflowEvent[]
+
+  @@index([organType, status, bloodGroup])
+  @@index([institutionId, status, createdAt])
+  @@index([destinationCentreId, status])
+  @@index([preservationStartTime])
+}
+
+model OrganRecipient {
+  id               String                @id @default(uuid()) @db.Uuid
+  reference        String                @unique
+  userId           String?               @db.Uuid
+  institutionId    String                @db.Uuid
+  requestId        String?               @db.Uuid
+  organType        OrganType
+  bloodGroup       BloodGroup?
+  priority         RequestPriority       @default(NORMAL)
+  status           OrganRecipientStatus  @default(ACTIVE)
+  registrationDate DateTime              @default(now())
+  createdAt        DateTime              @default(now())
+  updatedAt        DateTime              @updatedAt
+  user             User?                 @relation(fields: [userId], references: [id])
+  institution      Institution           @relation(fields: [institutionId], references: [id])
+  request          Request?              @relation(fields: [requestId], references: [id])
+  requirement      RecipientRequirement?
+  matches          OrganMatch[]
+  offers           OrganOffer[]
+  organs           OrganRecord[]
+
+  @@index([institutionId, status, priority])
+  @@index([organType, bloodGroup, status])
+}
+
+model RecipientRequirement {
+  id                 String          @id @default(uuid()) @db.Uuid
+  recipientId        String          @unique @db.Uuid
+  organType          OrganType
+  bloodGroup         BloodGroup?
+  priority           RequestPriority @default(NORMAL)
+  latitude           Float?
+  longitude          Float?
+  maximumDistanceKm  Float?
+  urgency            String?
+  requiredBy         DateTime?
+  configuredCriteria Json?
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
+  recipient          OrganRecipient  @relation(fields: [recipientId], references: [id], onDelete: Cascade)
+
+  @@index([organType, bloodGroup, priority])
+}
+
+model OrganPreservationPolicy {
+  id            String             @id @default(uuid()) @db.Uuid
+  institutionId String?            @db.Uuid
+  organType     OrganType
+  method        PreservationMethod
+  targetHours   Float
+  warningHours  Float
+  criticalHours Float
+  maximumHours  Float
+  label         String             @default("DEMO / CONFIGURABLE - NOT A CLINICAL RULE")
+  active        Boolean            @default(true)
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+  institution   Institution?       @relation(fields: [institutionId], references: [id])
+
+  @@unique([institutionId, organType, method])
+  @@index([organType, method, active])
+}
+
+model OrganMatch {
+  id                String           @id @default(uuid()) @db.Uuid
+  organId           String           @db.Uuid
+  recipientId       String           @db.Uuid
+  status            OrganMatchStatus @default(GENERATED)
+  coordinationScore Float
+  matchReasons      Json
+  criteriaSnapshot  Json
+  generatedAt       DateTime         @default(now())
+  reviewedAt        DateTime?
+  reviewedById      String?          @db.Uuid
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+  organ             OrganRecord      @relation(fields: [organId], references: [id], onDelete: Cascade)
+  recipient         OrganRecipient   @relation(fields: [recipientId], references: [id], onDelete: Cascade)
+  reviewedBy        User?            @relation("OrganMatchReviewer", fields: [reviewedById], references: [id])
+  offers            OrganOffer[]
+
+  @@unique([organId, recipientId, generatedAt])
+  @@index([organId, status, coordinationScore])
+  @@index([recipientId, status])
+}
+
+model OrganOffer {
+  id                String           @id @default(uuid()) @db.Uuid
+  reference         String           @unique
+  organId           String           @db.Uuid
+  recipientId       String           @db.Uuid
+  matchId           String           @db.Uuid
+  offeringCentreId  String           @db.Uuid
+  receivingCentreId String           @db.Uuid
+  status            OrganOfferStatus @default(DRAFT)
+  offeredAt         DateTime         @default(now())
+  responseDeadline  DateTime
+  respondedAt       DateTime?
+  responseReason    String?
+  responderId       String?          @db.Uuid
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+  organ             OrganRecord      @relation(fields: [organId], references: [id])
+  recipient         OrganRecipient   @relation(fields: [recipientId], references: [id])
+  match             OrganMatch       @relation(fields: [matchId], references: [id])
+  offeringCentre    Institution      @relation("OfferOfferingCentre", fields: [offeringCentreId], references: [id])
+  receivingCentre   Institution      @relation("OfferReceivingCentre", fields: [receivingCentreId], references: [id])
+  responder         User?            @relation("OfferResponder", fields: [responderId], references: [id])
+
+  @@index([organId, status, responseDeadline])
+  @@index([receivingCentreId, status, createdAt])
+}
+
+model OrganProcurement {
+  id                   String            @id @default(uuid()) @db.Uuid
+  organId              String            @db.Uuid
+  procurementCentreId  String            @db.Uuid
+  status               ProcurementStatus @default(SCHEDULED)
+  scheduledAt          DateTime
+  startedAt            DateTime?
+  completedAt          DateTime?
+  retrievalTime        DateTime?
+  responsibleReference String?
+  notes                String?
+  createdAt            DateTime          @default(now())
+  updatedAt            DateTime          @updatedAt
+  organ                OrganRecord       @relation(fields: [organId], references: [id])
+  procurementCentre    Institution       @relation(fields: [procurementCentreId], references: [id])
+
+  @@index([status, scheduledAt])
+}
+
+model OrganWorkflowEvent {
+  id            String       @id @default(uuid()) @db.Uuid
+  organId       String       @db.Uuid
+  actorId       String?      @db.Uuid
+  institutionId String?      @db.Uuid
+  eventType     String
+  fromStatus    String?
+  toStatus      String?
+  notes         String?
+  metadata      Json?
+  createdAt     DateTime     @default(now())
+  organ         OrganRecord  @relation(fields: [organId], references: [id], onDelete: Cascade)
+  actor         User?        @relation(fields: [actorId], references: [id], onDelete: SetNull)
+  institution   Institution? @relation(fields: [institutionId], references: [id], onDelete: SetNull)
+
+  @@index([organId, createdAt])
+  @@index([eventType, createdAt])
 }

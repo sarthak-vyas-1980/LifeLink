@@ -3,7 +3,7 @@ import { Server, type Socket } from "socket.io";
 import Redis from "ioredis";
 import { authenticateSocketToken, type AuthContext } from "../../middleware/auth";
 import { getRuntimeConfig } from "../../config";
-import { database, findNotificationsForUser } from "@lifelink/database";
+import { database, findNotificationsForInstitution, findNotificationsForUser } from "@lifelink/database";
 
 const channel = "lifelink:workflow-events:v1";
 const seenEventIds = new Set<string>();
@@ -12,6 +12,17 @@ let publisher: Redis | undefined;
 let subscriber: Redis | undefined;
 let poller: ReturnType<typeof setInterval> | undefined;
 let dispatching = false;
+let lastRelayFailureAt = 0;
+
+function logRelayFailure(error: unknown, phase: string) {
+  const now = Date.now();
+  if (now - lastRelayFailureAt < 30_000) return;
+  lastRelayFailureAt = now;
+  console.error(
+    `LifeLink ${phase} workflow event relay failed`,
+    error instanceof Error ? error.name : "UnknownError",
+  );
+}
 
 interface RealtimeEvent {
   eventId: string;
@@ -19,7 +30,7 @@ interface RealtimeEvent {
   requestId: string | null;
   payload: unknown;
   createdAt: string;
-  recipients: Array<{ userId: string; notificationId: string }>;
+  recipients: Array<{ userId?: string; institutionId?: string; notificationId: string }>;
 }
 
 export function rememberEventForDelivery(eventId: string) {
@@ -35,7 +46,9 @@ export function rememberEventForDelivery(eventId: string) {
 function deliverToLocalParticipants(event: RealtimeEvent) {
   if (!io || !rememberEventForDelivery(event.eventId)) return;
   for (const recipient of event.recipients) {
-    io.to(userRoom(recipient.userId)).emit("workflow:event", {
+    const room = recipient.institutionId ? institutionRoom(recipient.institutionId) : recipient.userId ? userRoom(recipient.userId) : undefined;
+    if (!room) continue;
+    io.to(room).emit("workflow:event", {
       eventId: event.eventId,
       eventType: event.eventType,
       requestId: event.requestId,
@@ -48,6 +61,10 @@ function deliverToLocalParticipants(event: RealtimeEvent) {
 
 function userRoom(userId: string) {
   return `user:${userId}`;
+}
+
+function institutionRoom(institutionId: string) {
+  return `institution:${institutionId}`;
 }
 
 function authenticateSocket(socket: Socket, next: (error?: Error) => void) {
@@ -75,15 +92,18 @@ export async function registerRealtimeGateway(httpServer: HttpServer) {
   io.use(authenticateSocket);
   io.on("connection", (socket) => {
     const actor = actorFromSocket(socket);
-    socket.join(userRoom(actor.userId));
+    if (actor.principalType === "INSTITUTION" && actor.institutionId) socket.join(institutionRoom(actor.institutionId));
+    else if (actor.userId) socket.join(userRoom(actor.userId));
+    else return;
     socket.on("workflow:sync", async (input: unknown, acknowledge?: (data: unknown) => void) => {
       if (typeof acknowledge !== "function") return;
       try {
         const cursor = readCursor(input);
-        const rows = await findNotificationsForUser(actor.userId, {
-          after: cursor,
-          take: 100,
-        });
+        const rows = actor.principalType === "INSTITUTION" && actor.institutionId
+          ? await findNotificationsForInstitution(actor.institutionId, { after: cursor, take: 100 })
+          : actor.userId
+            ? await findNotificationsForUser(actor.userId, { after: cursor, take: 100 })
+            : [];
         const hasMore = rows.length > 100;
         const page = rows.slice(0, 100);
         const last = page.at(-1);
@@ -119,15 +139,10 @@ export async function registerRealtimeGateway(httpServer: HttpServer) {
   }
 
   poller = setInterval(() => {
-    void publishPendingEvents().catch((error: unknown) => {
-      console.error(
-        "LifeLink workflow event relay failed",
-        error instanceof Error ? error.name : "UnknownError",
-      );
-    });
+    void publishPendingEvents().catch((error: unknown) => logRelayFailure(error, "periodic"));
   }, 1_000);
   poller.unref?.();
-  await publishPendingEvents();
+  void publishPendingEvents().catch((error: unknown) => logRelayFailure(error, "initial"));
   return io;
 }
 
@@ -144,7 +159,7 @@ export async function publishPendingEvents() {
     for (const event of pending) {
       const notifications = await database.notification.findMany({
         where: { eventId: event.id },
-        select: { id: true, userId: true },
+        select: { id: true, userId: true, institutionId: true },
       });
       const envelope: RealtimeEvent = {
         eventId: event.id,
@@ -153,7 +168,8 @@ export async function publishPendingEvents() {
         payload: event.payload,
         createdAt: event.createdAt.toISOString(),
         recipients: notifications.map((notification) => ({
-          userId: notification.userId,
+          ...(notification.userId ? { userId: notification.userId } : {}),
+          ...(notification.institutionId ? { institutionId: notification.institutionId } : {}),
           notificationId: notification.id,
         })),
       };

@@ -62,7 +62,13 @@ export function searchAvailableInventory(
       OR: [{ expiryDate: null }, { expiryDate: { gt: new Date() } }],
       institution: {
         status: InstitutionStatus.ACTIVE,
-        type: { in: [InstitutionType.HOSPITAL, InstitutionType.BLOOD_BANK] },
+        OR: [
+          { type: InstitutionType.BLOOD_BANK },
+          {
+            type: InstitutionType.HOSPITAL,
+            hospitalProfile: { is: { bloodService: { isNot: null } } },
+          },
+        ],
       },
     },
     include: { institution: true },

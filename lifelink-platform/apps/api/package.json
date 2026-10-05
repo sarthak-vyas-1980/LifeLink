@@ -25,7 +25,7 @@
     "typescript": "^5.7.2"
   },
   "scripts": {
-    "dev": "tsx watch src/server.ts",
+    "dev": "node --require ../../tests/tsx-userinfo-preload.cjs --env-file-if-exists=../../.env --import tsx --watch src/server.ts",
     "typecheck": "tsc --noEmit"
   }
 }

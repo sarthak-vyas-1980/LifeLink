@@ -4,6 +4,7 @@ import { appendAuditEvent, findAuditEvents } from "@lifelink/database";
 
 export interface AuditEventInput {
   actorId?: string;
+  actorInstitutionId?: string;
   action: string;
   entityType: string;
   entityId: string;

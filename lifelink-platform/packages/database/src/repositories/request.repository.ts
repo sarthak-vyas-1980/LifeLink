@@ -26,7 +26,8 @@ export function createRequest(data: Prisma.RequestCreateInput) {
           ? "EMERGENCY_REQUEST_CREATED"
           : "REQUEST_CREATED",
       requestId: request.id,
-      actorId: request.createdById,
+      actorId: request.createdById ?? undefined,
+      actorInstitutionId: request.createdByInstitutionId ?? undefined,
       payload: { status: request.status },
     });
     return request;

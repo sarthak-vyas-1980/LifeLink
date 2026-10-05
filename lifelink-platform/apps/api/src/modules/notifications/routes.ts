@@ -1,5 +1,5 @@
 import { Router, type Request, type RequestHandler, type Response } from "express";
-import { findNotificationsForUser, markNotificationRead } from "@lifelink/database";
+import { findNotificationsForInstitution, findNotificationsForUser, markInstitutionNotificationRead, markNotificationRead } from "@lifelink/database";
 import { authenticateRequest } from "../../middleware/auth";
 
 // Expose only the authenticated user's inbox and persisted reconnect stream.
@@ -17,7 +17,7 @@ export async function listNotifications(request: Request, response: Response) {
     response.status(400).json({ code: "INVALID_LIMIT", message: "Limit must be from 1 to 100." });
     return;
   }
-  const rows = await findNotificationsForUser(request.auth!.userId, {
+  const rows = await findActorNotifications(request.auth!, {
     unreadOnly: request.query.unread === "true",
     take,
   });
@@ -35,7 +35,7 @@ export async function synchronizeNotifications(request: Request, response: Respo
     });
     return;
   }
-  const rows = await findNotificationsForUser(request.auth!.userId, {
+  const rows = await findActorNotifications(request.auth!, {
     after: cursor ?? undefined,
     take,
   });
@@ -55,15 +55,23 @@ export async function synchronizeNotifications(request: Request, response: Respo
 
 // The user ID always comes from the authenticated token, never the request body.
 export async function updateNotificationStatus(request: Request, response: Response) {
-  const updated = await markNotificationRead(
-    request.auth!.userId,
-    String(request.params.notificationId),
-  );
+  const actor = request.auth!;
+  const updated = actor.principalType === "INSTITUTION" && actor.institutionId
+    ? await markInstitutionNotificationRead(actor.institutionId, String(request.params.notificationId))
+    : actor.userId
+      ? await markNotificationRead(actor.userId, String(request.params.notificationId))
+      : false;
   if (!updated) {
     response.status(404).json({ code: "NOTIFICATION_NOT_FOUND", message: "Notification not found." });
     return;
   }
   response.status(204).end();
+}
+
+function findActorNotifications(actor: NonNullable<Request["auth"]>, options: Parameters<typeof findNotificationsForUser>[1]) {
+  if (actor.principalType === "INSTITUTION" && actor.institutionId) return findNotificationsForInstitution(actor.institutionId, options);
+  if (actor.userId) return findNotificationsForUser(actor.userId, options);
+  throw new Error("Authenticated account has no notification identity.");
 }
 
 function readTake(value: unknown) {

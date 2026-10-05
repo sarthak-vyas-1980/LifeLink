@@ -1,13 +1,17 @@
 // Shared domain vocabulary used by API validation, persistence, and UI selectors.
 export const USER_ROLES = [
-  "HOSPITAL_USER",
-  "BLOOD_BANK_USER",
-  "ORGAN_CENTRE_USER",
-  "DONOR_RECIPIENT",
-  "ADMINISTRATOR",
+	"USER",
+	"ADMIN",
 ] as const;
 
 export type UserRole = (typeof USER_ROLES)[number];
+
+// Access scopes are derived from the selected account context, not stored as user roles.
+export const ACCESS_ROLES = [
+  "HOSPITAL_USER", "BLOOD_BANK_USER", "ORGAN_CENTRE_USER",
+  "USER", "ADMINISTRATOR",
+] as const;
+export type AccessRole = (typeof ACCESS_ROLES)[number];
 
 export const INSTITUTION_TYPES = [
   "HOSPITAL",

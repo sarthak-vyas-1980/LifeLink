@@ -3,6 +3,7 @@ import { database } from "../client";
 
 export interface AuditEventInput {
   actorId?: string;
+  actorInstitutionId?: string;
   action: string;
   entityType: string;
   entityId: string;

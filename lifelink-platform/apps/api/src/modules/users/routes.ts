@@ -31,9 +31,13 @@ export function registerUserRoutes(router = Router()) {
 
 // Read a profile only for its owner or an administrator.
 export async function getUserProfile(request: Request, response: Response) {
+  if (request.auth?.principalType !== "USER" || !request.auth.userId) {
+    response.status(403).json({ code: "FORBIDDEN", message: "This profile belongs to a user account." });
+    return;
+  }
   const requestedId = request.params.userId
     ? String(request.params.userId)
-    : request.auth?.userId;
+    : request.auth.userId;
   if (
     !requestedId ||
     (requestedId !== request.auth?.userId &&
@@ -60,12 +64,10 @@ export async function getUserProfile(request: Request, response: Response) {
     phone,
     role,
     status,
-    institutionId,
     createdAt,
     updatedAt,
-    institution,
-    hospitalProfile,
     donorProfile,
+    recipientProfile,
   } = user;
   response.json({
     id,
@@ -74,29 +76,12 @@ export async function getUserProfile(request: Request, response: Response) {
     phone,
     role,
     status,
-    institutionId,
     createdAt,
     updatedAt,
-    institution: institution
-      ? {
-          id: institution.id,
-          name: institution.name,
-          type: institution.type,
-          status: institution.status,
-          address: institution.address,
-          latitude: institution.latitude,
-          longitude: institution.longitude,
-        }
-      : null,
-    hospitalProfile: hospitalProfile
-      ? {
-          department: hospitalProfile.department,
-          licenseNumber: hospitalProfile.licenseNumber,
-        }
-      : null,
     donorProfile: donorProfile
       ? serializeDonorForActor(donorProfile, request.auth)
       : null,
+    recipientProfile,
   });
 }
 
@@ -125,7 +110,6 @@ export async function updateUserProfile(request: Request, response: Response) {
     phone: user.phone,
     role: user.role,
     status: user.status,
-    institutionId: user.institutionId,
     updatedAt: user.updatedAt,
   });
 }

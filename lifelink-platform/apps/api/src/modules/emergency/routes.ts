@@ -22,7 +22,7 @@ import { startBloodMatchingWorkflow } from "../requests/matching.service";
 const emergencyRoles = [
   "HOSPITAL_USER",
   "BLOOD_BANK_USER",
-  "DONOR_RECIPIENT",
+  "USER",
   "ADMINISTRATOR",
 ] as const;
 
@@ -59,11 +59,14 @@ export async function createEmergencyRequest(request: Request, response: Respons
     radiusKm: request.body.radiusKm,
     contactNumber: request.body.contactNumber,
     status: RequestStatus.UNDER_REVIEW,
-    createdBy: { connect: { id: request.auth!.userId } },
+    ...(request.auth!.userId
+      ? { createdBy: { connect: { id: request.auth!.userId } } }
+      : { createdByInstitution: { connect: { id: request.auth!.institutionId } } }),
   });
 
   await recordAuditEvent({
     actorId: request.auth!.userId,
+    actorInstitutionId: request.auth!.institutionId,
     action: "EMERGENCY_REQUEST_CREATED",
     entityType: "Request",
     entityId: record.id,

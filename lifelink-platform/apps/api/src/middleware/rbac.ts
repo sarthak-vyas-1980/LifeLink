@@ -1,5 +1,5 @@
 import type { RequestHandler } from "express";
-import type { UserRole } from "@lifelink/shared";
+import type { AccessRole } from "@lifelink/shared";
 
 function deny(
   response: Parameters<RequestHandler>[1],
@@ -13,7 +13,7 @@ function deny(
 }
 
 // Enforce role permissions before a protected handler executes.
-export function authorizeAction(...allowedRoles: UserRole[]): RequestHandler {
+export function authorizeAction(...allowedRoles: AccessRole[]): RequestHandler {
   return (request, response, next) => {
     if (!request.auth) {
       deny(response, "AUTH_REQUIRED", "Authentication required.", request.traceId);
@@ -60,9 +60,28 @@ export function authorizeInstitutionScope(
   };
 }
 
+export function authorizeInstitutionCapability(capability: "blood" | "organ"): RequestHandler {
+  return (request, response, next) => {
+    const actor = request.auth;
+    if (!actor) {
+      deny(response, "AUTH_REQUIRED", "Authentication required.", request.traceId);
+      return;
+    }
+    if (actor.role === "ADMINISTRATOR") {
+      next();
+      return;
+    }
+    if (actor.principalType !== "INSTITUTION" || !actor.capabilities?.[capability]) {
+      deny(response, "INSTITUTION_CAPABILITY_REQUIRED", `This institution does not have ${capability} services enabled.`, request.traceId);
+      return;
+    }
+    next();
+  };
+}
+
 // Check access to sensitive records before returning them.
 export function authorizeResourceAccess(
-  allowedRoles: UserRole[],
+  allowedRoles: AccessRole[],
   ownerId?: string,
   institutionId?: string,
 ) {
@@ -99,7 +118,7 @@ export function authorizeResourceAccess(
 
 // Resolve the permitted audience for a workflow event or notification.
 export function resolveAuthorizedRecipients(
-  recipients: Array<{ userId: string; institutionId?: string; role: UserRole }>,
+  recipients: Array<{ userId: string; institutionId?: string; role: AccessRole }>,
   eventInstitutionId?: string,
 ) {
   return recipients.filter(

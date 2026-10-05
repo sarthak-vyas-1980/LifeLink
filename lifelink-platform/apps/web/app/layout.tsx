@@ -1,4 +1,5 @@
 import "./globals.css";
+import "./auth.css";
 import "leaflet/dist/leaflet.css";
 import type { ReactNode } from "react";
 

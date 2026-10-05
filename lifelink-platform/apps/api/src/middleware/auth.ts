@@ -1,12 +1,14 @@
 import type { NextFunction, Request, RequestHandler, Response } from "express";
 import jwt, { JwtPayload } from "jsonwebtoken";
 import { getRuntimeConfig } from "../config";
-import type { UserRole } from "@lifelink/shared";
+import type { AccessRole } from "@lifelink/shared";
 
 export interface AuthContext {
-  userId: string;
-  role: UserRole;
+  userId?: string;
+  principalType: "USER" | "INSTITUTION";
+  role: AccessRole;
   institutionId?: string;
+  capabilities?: { blood: boolean; organ: boolean };
 }
 
 const revokedTokens = new Map<string, number>();
@@ -48,9 +50,11 @@ function verifyToken(token: string): AuthContext {
   }
 
   return {
-    userId: claims.sub,
-    role: claims.role as UserRole,
-    institutionId: claims.institutionId,
+    userId: claims.principalType === "INSTITUTION" ? undefined : claims.sub,
+    principalType: claims.principalType === "INSTITUTION" ? "INSTITUTION" : "USER",
+    role: claims.role as AccessRole,
+    institutionId: claims.principalType === "INSTITUTION" ? claims.sub : claims.institutionId,
+    capabilities: claims.capabilities,
   };
 }
 

@@ -2,6 +2,16 @@
 
 The API is served from `API_BASE_URL` (default local port `4000`). Protected endpoints accept `Authorization: Bearer <token>`. Error responses use `{ code, message, traceId?, fieldErrors? }`; unexpected errors never include exception text or stack traces.
 
+## Authentication
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `POST` | `/api/auth/register` | Create a user account with role `USER` or `ADMIN`, or create a separate institution account with `institutionType`, `address`, `name`, `email`, `phone`, and `password`. Passwords must contain at least six characters. Hospital registration may enable blood and organ services independently. |
+| `POST` | `/api/auth/login` | Authenticate with `{ "email", "phone", "password", "accountType": "USER" | "INSTITUTION" }`. Institution accounts are resolved from `InstitutionAccount`; their access comes from the institution type and enabled hospital services. |
+| `POST` | `/api/auth/logout` | Revoke the presented bearer session. |
+
+User accounts are not classified as donors or recipients. After authentication, users can choose donation discovery or blood request workflows; both are authorized under the USER access scope. Phone numbers are matched against the registered contact number; this is not phone-based one-time-password verification.
+
 ## Blood requests
 
 | Method | Path | Purpose |
@@ -36,3 +46,7 @@ Request bodies are validated before service calls. Request responses are whiteli
 - `GET /api/notifications/sync?afterCreatedAt=<ISO>&afterId=<notification UUID>` replays that user's persisted notifications in stable cursor order.
 - `POST /api/notifications/:notificationId/read` marks only the authenticated user's notification as read.
 - Socket.IO authenticates with `{ auth: { token } }`, delivers `workflow:event` only to the recipient's user room, and accepts `workflow:sync` to replay from PostgreSQL.
+
+## Organ coordination
+
+The organ module is mounted at `/api/organs`. Its routes, methods, role scopes, state transitions, candidate ranking boundaries, and preservation timer behavior are documented in [Organ Coordination Flow](architecture/organ-coordination-flow.md). Organ records use separate tables from blood inventory and matching. All match results are potential coordination candidates; final medical assessment and allocation remain with authorized professionals.

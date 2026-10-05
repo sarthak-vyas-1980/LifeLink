@@ -3,6 +3,7 @@ import { createApp } from "./app";
 import { getRuntimeConfig } from "./config";
 import { disconnectDatabase } from "@lifelink/database";
 import { registerRealtimeGateway, stopRealtimeGateway } from "./modules/notifications/realtime.gateway";
+import { stopOrganCoordinationWorkers } from "./modules/organ-coordination/routes";
 
 let httpServer: HttpServer | undefined;
 
@@ -24,7 +25,8 @@ export async function startServer() {
 
 // Drain HTTP, Socket.IO, Redis, and PostgreSQL connections on shutdown.
 export async function stopServer() {
-  await stopRealtimeGateway();
+	stopOrganCoordinationWorkers();
+	await stopRealtimeGateway();
   if (httpServer?.listening) {
     await new Promise<void>((resolve, reject) =>
       httpServer!.close((error) => (error ? reject(error) : resolve())),

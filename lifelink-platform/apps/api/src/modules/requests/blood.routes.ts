@@ -39,7 +39,7 @@ import {
 
 const requestRoles = [
   "HOSPITAL_USER",
-  "DONOR_RECIPIENT",
+  "USER",
   "BLOOD_BANK_USER",
   "ADMINISTRATOR",
 ] as const;
@@ -87,7 +87,7 @@ export function registerBloodRequestRoutes(router = Router()) {
   router.post(
     "/:requestId/offers/:matchId/evaluate",
     authenticateRequest(),
-    authorizeAction("HOSPITAL_USER", "DONOR_RECIPIENT", "ADMINISTRATOR"),
+    authorizeAction("HOSPITAL_USER", "USER", "ADMINISTRATOR"),
     validateUuidParams("requestId", "matchId"),
     validateRequest(bloodOfferEvaluationSchema),
     asyncRoute(evaluateBloodOfferRoute),
@@ -95,14 +95,14 @@ export function registerBloodRequestRoutes(router = Router()) {
   router.post(
     "/:requestId/reopen",
     authenticateRequest(),
-    authorizeAction("HOSPITAL_USER", "DONOR_RECIPIENT", "ADMINISTRATOR"),
+    authorizeAction("HOSPITAL_USER", "USER", "ADMINISTRATOR"),
     validateUuidParams("requestId"),
     asyncRoute(reopenBloodRequest),
   );
   router.post(
     "/:requestId/cancel",
     authenticateRequest(),
-    authorizeAction("HOSPITAL_USER", "DONOR_RECIPIENT", "ADMINISTRATOR"),
+    authorizeAction("HOSPITAL_USER", "USER", "ADMINISTRATOR"),
     validateUuidParams("requestId"),
     asyncRoute(cancelBloodRequest),
   );
@@ -116,7 +116,7 @@ export function registerBloodRequestRoutes(router = Router()) {
   router.post(
     "/:requestId/receipt",
     authenticateRequest(),
-    authorizeAction("HOSPITAL_USER", "DONOR_RECIPIENT", "ADMINISTRATOR"),
+    authorizeAction("HOSPITAL_USER", "USER", "ADMINISTRATOR"),
     validateUuidParams("requestId"),
     asyncRoute(receiveBloodRequest),
   );
@@ -155,11 +155,14 @@ export async function createBloodRequest(request: Request, response: Response) {
     longitude: request.body.longitude,
     radiusKm: request.body.radiusKm,
     contactNumber: request.body.contactNumber,
-    createdBy: { connect: { id: request.auth?.userId } },
+    ...(request.auth?.userId
+      ? { createdBy: { connect: { id: request.auth.userId } } }
+      : { createdByInstitution: { connect: { id: request.auth?.institutionId } } }),
   });
 
   await recordAuditEvent({
     actorId: request.auth?.userId,
+    actorInstitutionId: request.auth?.institutionId,
     action: "REQUEST_CREATED",
     entityType: "Request",
     entityId: created.id,
@@ -204,11 +207,12 @@ export async function listBloodRequests(request: Request, response: Response) {
   if (take < 1 || take > 100) throw new ApiError(400, "INVALID_LIMIT", "Limit must be from 1 to 100.");
   const where: Record<string, unknown> = { requestType: RequestType.BLOOD };
   if (actor.role !== "ADMINISTRATOR") {
-    const scopes: Record<string, unknown>[] = [{ createdById: actor.userId }, { recipients: { some: { userId: actor.userId } } }];
+    const scopes: Record<string, unknown>[] = [];
+    if (actor.userId) scopes.push({ createdById: actor.userId }, { recipients: { some: { userId: actor.userId } } });
     if (actor.institutionId) {
-      scopes.push({ createdBy: { institutionId: actor.institutionId } }, { matches: { some: { providerInstitutionId: actor.institutionId } } });
+      scopes.push({ createdByInstitutionId: actor.institutionId }, { matches: { some: { providerInstitutionId: actor.institutionId } } });
     }
-    where.OR = scopes;
+    where.OR = scopes.length ? scopes : [{ id: "" }];
   }
   const rows = await searchRequests(where as never, take + 1);
   response.json({ requests: rows.slice(0, take).map((row) => serializeRequestForActor(row, actor)), hasMore: rows.length > take });
@@ -236,7 +240,7 @@ export function assertMayCoordinate(
     record.createdById === actor.userId ||
     (actor.role === "HOSPITAL_USER" &&
       !!actor.institutionId &&
-      record.createdBy.institutionId === actor.institutionId)
+      record.createdByInstitutionId === actor.institutionId)
   ) {
     return;
   }
@@ -253,7 +257,7 @@ export function mayReadRequest(
     record.recipients.some((recipient) => recipient.userId === actor.userId) ||
     ((actor.role === "HOSPITAL_USER" || actor.role === "BLOOD_BANK_USER") &&
       !!actor.institutionId &&
-      (record.createdBy.institutionId === actor.institutionId ||
+      (record.createdByInstitutionId === actor.institutionId ||
         record.matches.some(
           (match) => match.providerInstitutionId === actor.institutionId,
         )))

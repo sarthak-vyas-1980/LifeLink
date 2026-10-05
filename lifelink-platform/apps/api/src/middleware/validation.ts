@@ -7,28 +7,49 @@ import {
   isAllowedTransition,
 } from "@lifelink/shared";
 
+const phoneNumberSchema = z.string().trim().min(7).max(30)
+  .regex(/^\+?[0-9\s().-]+$/, "Enter a valid phone number.")
+  .refine((value) => {
+    const digits = value.replace(/\D/g, "").length;
+    return digits >= 7 && digits <= 15;
+  }, "Enter a valid phone number.");
+
+const userRoles = ["USER", "ADMIN"] as const;
+
 export const registrationSchema = z.object({
   name: z.string().trim().min(2).max(120),
   email: z.string().email().max(254),
-  phone: z.string().trim().min(7).max(30).optional(),
-  password: z.string().min(12).max(128),
-  role: z.enum([
-    "HOSPITAL_USER",
-    "BLOOD_BANK_USER",
-    "ORGAN_CENTRE_USER",
-    "DONOR_RECIPIENT",
-  ]),
-  institutionId: z.string().uuid().optional(),
+  phone: phoneNumberSchema,
+  password: z.string().min(6).max(128),
+  accountType: z.enum(["USER", "INSTITUTION"]),
+  role: z.enum(userRoles).optional(),
+  institutionType: z.enum(["HOSPITAL", "BLOOD_BANK", "ORGAN_CENTRE"]).optional(),
+  address: z.string().trim().min(3).max(300).optional(),
+  contactPerson: z.string().trim().min(2).max(120).optional(),
+  bloodServiceEnabled: z.boolean().optional(),
+  organServiceEnabled: z.boolean().optional(),
+}).superRefine((value, context) => {
+  if (value.accountType === "USER" && !value.role) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["role"], message: "Choose User or Admin." });
+  }
+  if (value.accountType === "INSTITUTION" && (!value.institutionType || !value.address)) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["institutionType"], message: "Enter the institution type and address." });
+  }
+  if (value.accountType === "INSTITUTION" && value.role) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["role"], message: "Institutions use their institution type, not a user account role." });
+  }
 });
 
 export const loginSchema = z.object({
   email: z.string().email().max(254),
+  phone: phoneNumberSchema,
   password: z.string().min(1).max(128),
+  accountType: z.enum(["USER", "INSTITUTION"]),
 });
 
 export const profileUpdateSchema = z.object({
   name: z.string().trim().min(2).max(120).optional(),
-  phone: z.string().trim().min(7).max(30).optional(),
+  phone: phoneNumberSchema.optional(),
 });
 
 const bloodRequestFields = z.object({
@@ -112,6 +133,54 @@ export const bloodOfferResponseSchema = z.object({
 
 export const bloodOfferEvaluationSchema = z.object({
   action: z.enum(["ACCEPT", "REJECT"]),
+});
+
+const organTypes = ["KIDNEY", "LIVER", "HEART", "LUNG", "PANCREAS", "INTESTINE", "CORNEA", "BONE_MARROW", "OTHER"] as const;
+const preservationMethods = ["STATIC_COLD_STORAGE", "HYPOTHERMIC_MACHINE_PERFUSION", "NORMOTHERMIC_MACHINE_PERFUSION", "CORNEAL_STORAGE_MEDIUM", "OTHER"] as const;
+const bloodGroupValues = ["A_POSITIVE", "A_NEGATIVE", "B_POSITIVE", "B_NEGATIVE", "AB_POSITIVE", "AB_NEGATIVE", "O_POSITIVE", "O_NEGATIVE"] as const;
+const priorityValues = ["NORMAL", "URGENT", "EMERGENCY"] as const;
+
+export const organDonorSchema = z.object({
+	donorType: z.string().trim().min(2).max(60),
+	consentType: z.string().trim().min(2).max(60),
+	bloodGroup: z.enum(bloodGroupValues).optional(),
+	documentReference: z.string().trim().max(500).optional(),
+	institutionId: z.string().uuid().optional(),
+});
+
+export const organRecordSchema = z.object({
+	donorId: z.string().uuid(),
+	organType: z.enum(organTypes),
+	bloodGroup: z.enum(bloodGroupValues).optional(),
+	notes: z.string().trim().max(1000).optional(),
+	institutionId: z.string().uuid().optional(),
+});
+
+export const organStatusSchema = z.object({ status: z.enum(["REGISTERED", "ASSESSMENT_PENDING", "ELIGIBLE_FOR_COORDINATION", "AVAILABLE", "MATCHING", "OFFERED", "ACCEPTED", "RETRIEVAL_SCHEDULED", "RETRIEVAL_IN_PROGRESS", "RETRIEVED", "PRESERVING", "IN_TRANSIT", "ARRIVED", "FINAL_ASSESSMENT", "ALLOCATED", "TRANSPLANTED", "COMPLETED", "UNAVAILABLE", "EXPIRED", "DISCARDED", "CANCELLED"]) });
+
+export const recipientRequirementSchema = z.object({
+	organType: z.enum(organTypes),
+	bloodGroup: z.enum(bloodGroupValues).optional(),
+	priority: z.enum(priorityValues).default("NORMAL"),
+	latitude: z.number().min(-90).max(90).optional(),
+	longitude: z.number().min(-180).max(180).optional(),
+	maximumDistanceKm: z.number().positive().max(5000).optional(),
+	urgency: z.string().trim().max(80).optional(),
+	requiredBy: z.coerce.date().optional(),
+	institutionId: z.string().uuid().optional(),
+}).superRefine((value, context) => {
+	if ((value.latitude === undefined) !== (value.longitude === undefined)) context.addIssue({ code: z.ZodIssueCode.custom, path: [value.latitude === undefined ? "latitude" : "longitude"], message: "Provide both coordinates or neither." });
+});
+
+export const organMatchingSchema = z.object({ radiusKm: z.number().positive().max(5000).optional() });
+export const organMatchReviewSchema = z.object({ status: z.enum(["UNDER_REVIEW", "SHORTLISTED", "REJECTED"]) });
+export const organOfferSchema = z.object({ matchId: z.string().uuid(), responseDeadline: z.coerce.date(), responseReason: z.string().trim().max(500).optional() });
+export const organOfferResponseSchema = z.object({ action: z.enum(["ACCEPT", "REJECT"]), responseReason: z.string().trim().max(500).optional() });
+export const organProcurementSchema = z.object({ organId: z.string().uuid(), scheduledAt: z.coerce.date(), responsibleReference: z.string().trim().max(120).optional(), notes: z.string().trim().max(1000).optional() });
+export const procurementStatusSchema = z.object({ status: z.enum(["IN_PROGRESS", "COMPLETED", "CANCELLED", "FAILED"]) });
+export const preservationStartSchema = z.object({ method: z.enum(preservationMethods), solution: z.string().trim().max(120).optional() });
+export const preservationPolicySchema = z.object({ institutionId: z.string().uuid().optional(), organType: z.enum(organTypes), method: z.enum(preservationMethods), targetHours: z.number().positive().max(1000), warningHours: z.number().positive().max(1000), criticalHours: z.number().positive().max(1000), maximumHours: z.number().positive().max(1000), label: z.string().trim().min(4).max(100).default("DEMO / CONFIGURABLE - NOT A CLINICAL RULE").refine((label) => label.toUpperCase().includes("NOT A CLINICAL RULE"), "Keep the policy disclaimer in its label.") }).superRefine((value, context) => {
+	if (!(value.maximumHours >= value.targetHours && value.targetHours >= value.warningHours && value.warningHours >= value.criticalHours)) context.addIssue({ code: z.ZodIssueCode.custom, path: ["maximumHours"], message: "Set maximum >= target >= warning >= critical hours." });
 });
 
 // Validate request shape before it reaches a feature handler.

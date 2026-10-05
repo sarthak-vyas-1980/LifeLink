@@ -7,6 +7,7 @@ export interface WorkflowEventInput {
   eventType: string;
   requestId?: string;
   actorId?: string;
+  actorInstitutionId?: string;
   payload: Record<string, string | number | boolean | null>;
 }
 
@@ -16,37 +17,36 @@ export async function recordWorkflowEvent(
   input: WorkflowEventInput,
 ) {
   const eventId = randomUUID();
-  const recipientIds = new Set<string>();
+  const recipientUserIds = new Set<string>();
+  const recipientInstitutionIds = new Set<string>();
 
   if (input.requestId) {
     const request = await transaction.request.findUnique({
       where: { id: input.requestId },
       select: {
         createdById: true,
-        createdBy: { select: { institutionId: true } },
+        createdByInstitutionId: true,
         matches: { select: { providerInstitutionId: true } },
       },
     });
     if (request) {
-      recipientIds.add(request.createdById);
+      if (request.createdById) recipientUserIds.add(request.createdById);
       const institutionIds = [
-        request.createdBy.institutionId,
+        request.createdByInstitutionId,
         ...request.matches.map((match) => match.providerInstitutionId),
       ].filter((id): id is string => Boolean(id));
       if (institutionIds.length > 0) {
-        const participants = await transaction.user.findMany({
-          where: {
-            status: "ACTIVE",
-            institutionId: { in: [...new Set(institutionIds)] },
-            role: { in: ["HOSPITAL_USER", "BLOOD_BANK_USER"] },
-          },
-          select: { id: true },
+        const participants = await transaction.institutionAccount.findMany({
+          where: { institutionId: { in: [...new Set(institutionIds)] } },
+          select: { institutionId: true },
         });
-        for (const participant of participants) recipientIds.add(participant.id);
+        for (const participant of participants) recipientInstitutionIds.add(participant.institutionId);
       }
     }
   } else if (input.actorId) {
-    recipientIds.add(input.actorId);
+    recipientUserIds.add(input.actorId);
+  } else if (input.actorInstitutionId) {
+    recipientInstitutionIds.add(input.actorInstitutionId);
   }
 
   await transaction.workflowEvent.create({
@@ -55,14 +55,18 @@ export async function recordWorkflowEvent(
       eventType: input.eventType,
       requestId: input.requestId,
       actorId: input.actorId,
+      actorInstitutionId: input.actorInstitutionId,
       payload: input.payload as Prisma.InputJsonValue,
     },
   });
 
-  if (recipientIds.size > 0) {
+  if (recipientUserIds.size > 0 || recipientInstitutionIds.size > 0) {
     await transaction.notification.createMany({
-      data: [...recipientIds].map((userId) => ({
-        userId,
+      data: [
+        ...[...recipientUserIds].map((userId) => ({ userId })),
+        ...[...recipientInstitutionIds].map((institutionId) => ({ institutionId })),
+      ].map((recipient) => ({
+        ...recipient,
         eventId,
         eventType: input.eventType,
         requestId: input.requestId,

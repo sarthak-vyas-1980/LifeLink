@@ -2,7 +2,7 @@
 
 ## Actors
 
-Hospital, Blood Bank, Organ Centre, User/Donor/Recipient, and Administrator.
+Hospital, Blood Bank, Organ Centre, User, and Administrator. Users may choose donation or recipient workflows after signing in.
 
 ## External Services
 

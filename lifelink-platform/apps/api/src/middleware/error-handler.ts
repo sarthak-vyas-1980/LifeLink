@@ -51,6 +51,9 @@ export function mapRequestError(error: unknown): SafeError {
 
   if (error && typeof error === "object" && "code" in error) {
     const code = String((error as { code: unknown }).code);
+    if (["P1000", "P1001", "P1002", "P1017"].includes(code)) {
+      return { status: 503, code: "DATABASE_UNAVAILABLE", message: "The database is temporarily unavailable. Please try again shortly." };
+    }
     if (code === "P2002") {
       return { status: 409, code: "RESOURCE_CONFLICT", message: "A record with those details already exists." };
     }
@@ -60,6 +63,10 @@ export function mapRequestError(error: unknown): SafeError {
     if (code === "P2003" || code === "P2000") {
       return { status: 400, code: "INVALID_REFERENCE", message: "A referenced value is invalid." };
     }
+  }
+
+  if (error instanceof Error && error.name === "PrismaClientInitializationError") {
+    return { status: 503, code: "DATABASE_UNAVAILABLE", message: "The database is temporarily unavailable. Please try again shortly." };
   }
 
   if (

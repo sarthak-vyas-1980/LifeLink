@@ -1,4 +1,4 @@
-// Define allocation, procurement, and transport workflow endpoints.
+// Define allocation and procurement workflow endpoints.
 export function registerAllocationRoutes() {
   // Restrict all actions to authorized organ-coordination participants.
 }

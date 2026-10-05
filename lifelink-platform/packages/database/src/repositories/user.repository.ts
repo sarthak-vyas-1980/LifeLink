@@ -4,7 +4,7 @@ import { database } from "../client";
 export function findUserById(id: string) {
   return database.user.findUnique({
     where: { id },
-    include: { institution: true, hospitalProfile: true, donorProfile: true },
+    include: { donorProfile: true, recipientProfile: true },
   });
 }
 

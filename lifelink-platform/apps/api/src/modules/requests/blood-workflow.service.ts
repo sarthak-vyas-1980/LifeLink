@@ -68,7 +68,7 @@ function assertRequester(request: BloodRequest, actor: AuthContext) {
     request.createdById === actor.userId ||
     (actor.role === "HOSPITAL_USER" &&
       actor.institutionId !== undefined &&
-      request.createdBy.institutionId === actor.institutionId)
+      request.createdByInstitutionId === actor.institutionId)
   ) {
     return;
   }
@@ -159,7 +159,7 @@ async function expireOtherOffers(
   transaction: Transaction,
   request: BloodRequest,
   exceptMatchId: string | undefined,
-  actorId: string,
+  actorId: string | undefined,
 ) {
   const otherOffers = request.matches.filter(
     (match) =>

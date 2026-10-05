@@ -4,12 +4,43 @@ import { database } from "../client";
 export function findInstitutionById(id: string) {
   return database.institution.findUnique({
     where: { id },
-    include: { users: true, hospitalUsers: true },
+    include: {
+      hospitalProfile: { include: { bloodService: true, organService: true } },
+      bloodBankProfile: true,
+      organCentreProfile: true,
+    },
+  });
+}
+
+export function findInstitutionAccessState(id: string) {
+  return database.institution.findUnique({
+    where: { id },
+    select: { type: true, status: true },
+  });
+}
+
+export function findInstitutionAccountByEmail(email: string) {
+  return database.institutionAccount.findUnique({
+    where: { email },
+    include: {
+      institution: {
+        include: {
+          hospitalProfile: { include: { bloodService: true, organService: true } },
+          bloodBankProfile: true,
+          organCentreProfile: true,
+        },
+      },
+    },
   });
 }
 
 export function createInstitution(data: Prisma.InstitutionCreateInput) {
-  return database.institution.create({ data });
+  const specialization = data.type === "HOSPITAL"
+    ? { hospitalProfile: data.hospitalProfile ?? { create: {} } }
+    : data.type === "BLOOD_BANK"
+      ? { bloodBankProfile: data.bloodBankProfile ?? { create: {} } }
+      : { organCentreProfile: data.organCentreProfile ?? { create: {} } };
+  return database.institution.create({ data: { ...data, ...specialization } });
 }
 
 export function saveInstitution(

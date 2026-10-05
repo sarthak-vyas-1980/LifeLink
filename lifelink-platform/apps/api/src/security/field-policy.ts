@@ -23,7 +23,8 @@ interface RequestRecord {
   radiusKm?: number | null;
   status: RequestStatus;
   requestDate?: Date;
-  createdById: string;
+  createdById?: string | null;
+  createdByInstitutionId?: string | null;
   contactNumber: string;
 }
 
@@ -40,7 +41,7 @@ export function serializeRequestForActor(
   actor?: AuthContext,
 ): BloodRequestResponse {
   const canSeeContact =
-    actor?.role === "ADMINISTRATOR" || actor?.userId === record.createdById;
+    actor?.role === "ADMINISTRATOR" || actor?.userId === record.createdById || actor?.institutionId === record.createdByInstitutionId;
   return {
     id: record.id,
     requestType: record.requestType,
