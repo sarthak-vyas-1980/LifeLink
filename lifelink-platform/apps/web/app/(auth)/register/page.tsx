@@ -23,11 +23,13 @@ export default function RegisterPage() {
   const [address, setAddress] = useState("");
   const [bloodServiceEnabled, setBloodServiceEnabled] = useState(false);
   const [organServiceEnabled, setOrganServiceEnabled] = useState(false);
+  const [emergencySupportEnabled, setEmergencySupportEnabled] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    if (getCurrentSession()) router.replace("/dashboard");
+    const session = getCurrentSession();
+    if (session) router.replace(session.user.institutionId ? "/institution" : "/dashboard");
   }, [router]);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -48,11 +50,11 @@ export default function RegisterPage() {
           phone,
           password,
           accountType,
-          ...(accountType === "USER" ? { role: accountRole } : { institutionType, address, ...(institutionType === "HOSPITAL" ? { bloodServiceEnabled, organServiceEnabled } : {}) }),
+          ...(accountType === "USER" ? { role: accountRole } : { institutionType, address, ...(institutionType === "HOSPITAL" ? { bloodServiceEnabled, organServiceEnabled, emergencySupportEnabled } : {}) }),
         }),
       });
       saveCurrentSession(session);
-      router.replace("/dashboard");
+      router.replace(session.user.institutionId ? "/institution" : "/dashboard");
     } catch (cause) {
       setError(cause instanceof ApiFailure ? cause.message : "Account creation failed.");
     } finally {
@@ -106,7 +108,7 @@ export default function RegisterPage() {
                     </div>
                   </fieldset>
                   <label>Institution address<input required maxLength={300} autoComplete="street-address" value={address} onChange={(event) => setAddress(event.target.value)} /></label>
-                  {institutionType === "HOSPITAL" && <fieldset className="auth-choice-group"><legend>Optional hospital services</legend><label className="auth-service-choice"><input type="checkbox" checked={bloodServiceEnabled} onChange={(event) => setBloodServiceEnabled(event.target.checked)} /> Blood coordination</label><label className="auth-service-choice"><input type="checkbox" checked={organServiceEnabled} onChange={(event) => setOrganServiceEnabled(event.target.checked)} /> Organ coordination</label></fieldset>}
+                  {institutionType === "HOSPITAL" && <fieldset className="auth-choice-group"><legend>Optional hospital services</legend><div className="auth-service-list"><label className="auth-service-choice"><input type="checkbox" checked={bloodServiceEnabled} onChange={(event) => setBloodServiceEnabled(event.target.checked)} /> Blood coordination</label><label className="auth-service-choice"><input type="checkbox" checked={organServiceEnabled} onChange={(event) => setOrganServiceEnabled(event.target.checked)} /> Organ coordination</label><label className="auth-service-choice"><input type="checkbox" checked={emergencySupportEnabled} onChange={(event) => setEmergencySupportEnabled(event.target.checked)} /> Emergency support</label></div></fieldset>}
                 </>
               )}
               {accountType === "USER" && (

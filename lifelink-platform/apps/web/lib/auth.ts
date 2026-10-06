@@ -1,7 +1,7 @@
 import { disconnectRealtime } from "./socket-client";
 import { requestApi } from "./api-client";
 
-export interface SessionUser { id: string; name: string; email: string; role: string; accountRole?: "USER" | "ADMIN"; institutionId?: string | null }
+export interface SessionUser { id: string; name: string; email: string; role: string; principalType?: "USER" | "INSTITUTION"; accountRole?: "USER" | "ADMIN"; institutionId?: string | null; capabilities?: { blood: boolean; organ: boolean } }
 export interface Session { token: string; user: SessionUser }
 const STORAGE_KEY = "lifelink.session";
 

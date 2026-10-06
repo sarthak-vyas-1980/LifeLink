@@ -7,6 +7,9 @@ test("organ transitions reject skipping procurement and terminal-state regressio
 	assert.equal(isOrganTransitionAllowed(OrganStatus.ACCEPTED, OrganStatus.RETRIEVAL_SCHEDULED), true);
 	assert.equal(isOrganTransitionAllowed(OrganStatus.ACCEPTED, OrganStatus.RETRIEVED), false);
 	assert.equal(isOrganTransitionAllowed(OrganStatus.COMPLETED, OrganStatus.AVAILABLE), false);
+	assert.equal(isOrganTransitionAllowed(OrganStatus.PRESERVING, OrganStatus.FINAL_ASSESSMENT), true);
+	assert.equal(isOrganTransitionAllowed(OrganStatus.PRESERVING, OrganStatus.IN_TRANSIT), false);
+	assert.equal(isOrganTransitionAllowed(OrganStatus.IN_TRANSIT, OrganStatus.ARRIVED), false);
 });
 
 test("preservation clock calculates operational severity from configured thresholds", () => {

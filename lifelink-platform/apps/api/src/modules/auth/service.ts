@@ -26,6 +26,7 @@ export interface RegistrationInput {
   contactPerson?: string;
   bloodServiceEnabled?: boolean;
   organServiceEnabled?: boolean;
+  emergencySupportEnabled?: boolean;
 }
 
 interface InstitutionCapabilities { blood: boolean; organ: boolean }
@@ -77,6 +78,7 @@ export async function registerUser(input: RegistrationInput) {
       },
       ...(input.institutionType === InstitutionType.HOSPITAL
         ? { hospitalProfile: { create: {
+            emergencySupport: Boolean(input.emergencySupportEnabled),
             ...(input.bloodServiceEnabled ? { bloodService: { create: {} } } : {}),
             ...(input.organServiceEnabled ? { organService: { create: {} } } : {}),
           } } }
@@ -106,6 +108,7 @@ export async function registerUser(input: RegistrationInput) {
       },
       accessRole: role,
       principalType: "INSTITUTION" as const,
+      capabilities,
       token: issueToken(institution.id, role, "INSTITUTION", institution.id, capabilities),
     };
   }
@@ -171,6 +174,7 @@ export async function loginUser(
       },
       accessRole: role,
       principalType: "INSTITUTION" as const,
+      capabilities,
       token: issueToken(account.institutionId, role, "INSTITUTION", account.institutionId, capabilities),
     };
   }

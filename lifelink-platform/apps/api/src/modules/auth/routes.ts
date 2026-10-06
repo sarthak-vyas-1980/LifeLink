@@ -31,7 +31,7 @@ export async function handleRegistration(request: Request, response: Response) {
   const result = await registerUser(request.body);
   response
     .status(201)
-    .json({ user: { ...safeUser(result.user), role: result.accessRole, ...(result.principalType === "USER" ? { accountRole: result.user.role } : {}) }, token: result.token });
+    .json({ user: { ...safeUser(result.user), role: result.accessRole, principalType: result.principalType, ...(result.principalType === "USER" ? { accountRole: result.user.role } : { capabilities: result.capabilities }) }, token: result.token });
 }
 
 // Handle login and return the authorized dashboard context.
@@ -42,7 +42,7 @@ export async function handleLogin(request: Request, response: Response) {
     request.body.password,
     request.body.accountType,
   );
-  response.json({ user: { ...safeUser(result.user), role: result.accessRole, ...(result.principalType === "USER" ? { accountRole: result.user.role } : {}) }, token: result.token });
+  response.json({ user: { ...safeUser(result.user), role: result.accessRole, principalType: result.principalType, ...(result.principalType === "USER" ? { accountRole: result.user.role } : { capabilities: result.capabilities }) }, token: result.token });
 }
 
 // Revoke the presented session token at the session boundary.

@@ -19,7 +19,8 @@ export default function LoginPage() {
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    if (getCurrentSession()) router.replace("/dashboard");
+    const session = getCurrentSession();
+    if (session) router.replace(session.user.institutionId ? "/institution" : "/dashboard");
   }, [router]);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -42,7 +43,7 @@ export default function LoginPage() {
         }),
       });
       saveCurrentSession(session);
-      router.replace("/dashboard");
+      router.replace(session.user.institutionId ? "/institution" : "/dashboard");
     } catch (cause) {
       setError(cause instanceof ApiFailure ? cause.message : "Sign in failed.");
     } finally {

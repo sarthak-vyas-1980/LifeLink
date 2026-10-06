@@ -18,7 +18,7 @@ export const handleApiError: ErrorRequestHandler = (
 ) => {
   const safeError = mapRequestError(error);
   if (safeError.status >= 500) {
-    recordUnexpectedError(error);
+    recordUnexpectedError(error, request.traceId);
   }
 
   response.status(safeError.status).json({
@@ -109,9 +109,13 @@ export function mapRequestError(error: unknown): SafeError {
 }
 
 // Record only safe diagnostics; request bodies and credentials are never logged.
-export function recordUnexpectedError(error: unknown) {
-  console.error(
-    "LifeLink API error",
-    error instanceof Error ? error.name : "UnknownError",
-  );
+export function recordUnexpectedError(error: unknown, traceId?: string) {
+  const diagnostic = error && typeof error === "object" && "code" in error
+    ? String((error as { code: unknown }).code)
+    : undefined;
+  console.error("LifeLink API error", {
+    traceId,
+    name: error instanceof Error ? error.name : "UnknownError",
+    ...(diagnostic ? { code: diagnostic } : {}),
+  });
 }

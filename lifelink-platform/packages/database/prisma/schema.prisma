@@ -169,6 +169,7 @@ enum OrganAuthorizationStatus {
 }
 
 enum OrganRecipientStatus {
+  PENDING_REVIEW
   ACTIVE
   MATCHED
   CLOSED
