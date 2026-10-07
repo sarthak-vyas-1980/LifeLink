@@ -54,6 +54,9 @@ export function mapRequestError(error: unknown): SafeError {
     if (["P1000", "P1001", "P1002", "P1017"].includes(code)) {
       return { status: 503, code: "DATABASE_UNAVAILABLE", message: "The database is temporarily unavailable. Please try again shortly." };
     }
+    if (code === "P2021" || code === "P2022") {
+      return { status: 503, code: "DATABASE_SCHEMA_OUT_OF_SYNC", message: "The database schema is behind this application. Apply pending Prisma migrations, then restart the API." };
+    }
     if (code === "P2002") {
       return { status: 409, code: "RESOURCE_CONFLICT", message: "A record with those details already exists." };
     }
@@ -110,12 +113,17 @@ export function mapRequestError(error: unknown): SafeError {
 
 // Record only safe diagnostics; request bodies and credentials are never logged.
 export function recordUnexpectedError(error: unknown, traceId?: string) {
-  const diagnostic = error && typeof error === "object" && "code" in error
-    ? String((error as { code: unknown }).code)
-    : undefined;
+  const prismaError = error && typeof error === "object" ? error as { code?: unknown; meta?: { modelName?: unknown; column?: unknown; table?: unknown } } : undefined;
+  const diagnostic = prismaError?.code === undefined ? undefined : String(prismaError.code);
+  const isSchemaError = diagnostic === "P2021" || diagnostic === "P2022";
   console.error("LifeLink API error", {
     traceId,
     name: error instanceof Error ? error.name : "UnknownError",
     ...(diagnostic ? { code: diagnostic } : {}),
+    ...(isSchemaError ? {
+      model: prismaError?.meta?.modelName,
+      field: prismaError?.meta?.column,
+      table: prismaError?.meta?.table,
+    } : {}),
   });
 }

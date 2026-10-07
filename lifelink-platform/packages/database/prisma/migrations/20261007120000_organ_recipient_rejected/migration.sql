@@ -1,0 +1,1 @@
+ALTER TYPE "OrganRecipientStatus" ADD VALUE IF NOT EXISTS 'REJECTED';

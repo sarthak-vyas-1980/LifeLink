@@ -85,9 +85,9 @@ export default function LoginPage() {
           {accountType && (
             <div className="auth-credentials">
               <label>Email address<input type="email" required autoComplete="username" value={email} onChange={(event) => setEmail(event.target.value)} /></label>
-              <label>Phone number<input type="tel" required autoComplete="tel" inputMode="tel" value={phone} onChange={(event) => setPhone(event.target.value)} /></label>
+              <label>Phone number (optional)<input type="tel" autoComplete="tel" inputMode="tel" value={phone} onChange={(event) => setPhone(event.target.value)} /></label>
               <label>Password<input type="password" required autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} /></label>
-              <p className="auth-hint">Your phone number must match the contact number registered to this account.</p>
+              <p className="auth-hint">Sign in with your registered email and password. If you enter a phone number, it must match your account.</p>
             </div>
           )}
 

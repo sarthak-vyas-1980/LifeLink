@@ -134,8 +134,6 @@ enum OrganStatus {
   RETRIEVAL_IN_PROGRESS
   RETRIEVED
   PRESERVING
-  IN_TRANSIT
-  ARRIVED
   FINAL_ASSESSMENT
   ALLOCATED
   TRANSPLANTED
@@ -154,6 +152,8 @@ enum OrganDonorStatus {
 
 enum ConsentStatus {
   PENDING
+  ACCEPTED
+  DECLINED
   RECORDED
   VERIFIED
   REJECTED
@@ -173,6 +173,7 @@ enum OrganRecipientStatus {
   ACTIVE
   MATCHED
   CLOSED
+  REJECTED
   CANCELLED
 }
 
@@ -259,6 +260,7 @@ model User {
   donations            Donation[]           @relation("DonorDonations")
   auditEvents          AuditLog[]
   organDonors          OrganDonor[]
+  consentResponses     OrganConsent[]       @relation("ConsentResponder")
   organRecipients      OrganRecipient[]
   consentRecords       OrganConsent[]       @relation("ConsentAuthor")
   reviewedOrganMatches OrganMatch[]         @relation("OrganMatchReviewer")
@@ -634,9 +636,10 @@ model OrganCentreProfile {
 model OrganDonor {
   id                  String                   @id @default(uuid()) @db.Uuid
   reference           String                   @unique
-  userId              String?                  @unique @db.Uuid
+  userId              String?                  @db.Uuid
   institutionId       String                   @db.Uuid
   donorType           String
+  organType           OrganType              @default(OTHER)
   consentStatus       ConsentStatus            @default(PENDING)
   authorizationStatus OrganAuthorizationStatus @default(PENDING)
   consentDate         DateTime?
@@ -653,6 +656,7 @@ model OrganDonor {
 
   @@index([institutionId, status, createdAt])
   @@index([consentStatus, authorizationStatus])
+  @@index([userId, organType, status])
 }
 
 model OrganConsent {
@@ -663,13 +667,18 @@ model OrganConsent {
   recordedAt        DateTime?
   verifiedAt        DateTime?
   authorizedById    String?       @db.Uuid
+  respondedById     String?       @db.Uuid
+  requestedAt       DateTime?
+  respondedAt       DateTime?
   documentReference String?
   notes             String?
   createdAt         DateTime      @default(now())
   donor             OrganDonor    @relation(fields: [donorId], references: [id], onDelete: Cascade)
   authorizedBy      User?         @relation("ConsentAuthor", fields: [authorizedById], references: [id])
+  respondedBy       User?         @relation("ConsentResponder", fields: [respondedById], references: [id])
 
   @@index([donorId, status, createdAt])
+  @@index([respondedById])
 }
 
 model OrganRecord {

@@ -12,6 +12,7 @@
     "dev:api": "npm run dev --workspace=@lifelink/api",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "seed:organ-demo": "node --import tsx scripts/seed-organ-demo.ts",
+    "seed:indore-organ-demo": "node --env-file-if-exists=.env --require ./tests/tsx-userinfo-preload.cjs --import tsx scripts/seed-indore-organ-demo.ts",
     "test": "node --require ./tests/tsx-userinfo-preload.cjs --import tsx --test tests/unit/workflow.test.ts tests/unit/inventory.test.ts tests/unit/security-realtime.test.ts tests/unit/organ-coordination.test.ts tests/integration/blood-workflow.test.ts"
   }
 }

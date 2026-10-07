@@ -136,7 +136,7 @@ export async function registerUser(input: RegistrationInput) {
 
 export async function loginUser(
   email: string,
-  phone: string,
+  phone: string | undefined,
   password: string,
   accountType: "USER" | "INSTITUTION",
 ) {
@@ -145,7 +145,7 @@ export async function loginUser(
     const account = await findInstitutionAccountByEmail(normalizedEmail);
     const valid = account
       ? (await bcrypt.compare(password, account.passwordHash)) &&
-        normalizePhoneNumber(account.phone) === normalizePhoneNumber(phone)
+        (!phone || normalizePhoneNumber(account.phone) === normalizePhoneNumber(phone))
       : false;
     if (!account || !valid || account.institution.status !== InstitutionStatus.ACTIVE) {
       throw new ApiError(401, "AUTH_INVALID", "Invalid credentials.");
@@ -182,7 +182,7 @@ export async function loginUser(
   const user = await findUserByEmail(normalizedEmail);
   const valid = user
     ? (await bcrypt.compare(password, user.passwordHash)) &&
-      normalizePhoneNumber(user.phone) === normalizePhoneNumber(phone)
+      (!phone || normalizePhoneNumber(user.phone) === normalizePhoneNumber(phone))
     : false;
   if (!user || !valid || user.status !== UserStatus.ACTIVE) {
     throw new ApiError(401, "AUTH_INVALID", "Invalid credentials.");

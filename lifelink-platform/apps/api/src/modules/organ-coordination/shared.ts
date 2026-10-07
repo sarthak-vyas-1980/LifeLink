@@ -31,11 +31,7 @@ const ORGAN_TRANSITIONS: Record<OrganStatus, OrganStatus[]> = {
 	RETRIEVAL_SCHEDULED: [OrganStatus.RETRIEVAL_IN_PROGRESS, OrganStatus.CANCELLED],
 	RETRIEVAL_IN_PROGRESS: [OrganStatus.RETRIEVED, OrganStatus.CANCELLED, OrganStatus.UNAVAILABLE],
 	RETRIEVED: [OrganStatus.PRESERVING],
-	// Transport states remain in Prisma for compatibility, but are not part of
-	// this coordination workflow.
 	PRESERVING: [OrganStatus.FINAL_ASSESSMENT, OrganStatus.UNAVAILABLE, OrganStatus.EXPIRED],
-	IN_TRANSIT: [],
-	ARRIVED: [],
 	FINAL_ASSESSMENT: [OrganStatus.ALLOCATED, OrganStatus.UNAVAILABLE],
 	ALLOCATED: [OrganStatus.TRANSPLANTED],
 	TRANSPLANTED: [OrganStatus.COMPLETED],
@@ -43,7 +39,7 @@ const ORGAN_TRANSITIONS: Record<OrganStatus, OrganStatus[]> = {
 };
 
 export function isOrganTransitionAllowed(from: OrganStatus, to: OrganStatus) {
-	return ORGAN_TRANSITIONS[from].includes(to);
+	return ORGAN_TRANSITIONS[from]?.includes(to) ?? false;
 }
 
 type Tx = Prisma.TransactionClient;

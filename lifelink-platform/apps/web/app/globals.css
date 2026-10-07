@@ -15,3 +15,351 @@
 .organ-provider-panel .panel-heading{align-items:flex-start}.organ-provider-panel .panel-heading p{color:var(--muted);font-size:12px}.organ-provider-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.organ-provider-card{display:flex;align-items:center;gap:11px;padding:13px;border:1px solid var(--line);border-radius:9px;background:#fbfdfc}.organ-provider-card>div{display:grid;gap:4px;min-width:0;flex:1}.organ-provider-card strong{font-size:12px}.organ-provider-card small{color:var(--muted);font-size:10px;line-height:1.5}.provider-active{padding:4px 8px;border-radius:99px;background:#effaf5;color:#267557;font-size:9px;font-weight:700}.empty-state{padding:12px 0}.empty-state h3{margin:0 0 6px;font-size:15px}.empty-state p{margin:0 0 12px;color:var(--muted);font-size:12px}.organ-workspace .organ-create-form>button{min-height:42px}.organ-personal-card .organ-create-form{gap:14px}@media(max-width:600px){.organ-provider-list{grid-template-columns:1fr}.organ-provider-panel .panel-heading{display:grid}}
 .organ-choice{max-width:760px}.organ-choice-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-top:18px}.organ-choice-button{display:grid;grid-template-columns:36px 1fr 20px;align-items:center;gap:8px;padding:18px;text-align:left;border:1px solid var(--line);border-radius:10px;background:#fff;color:var(--ink);cursor:pointer}.organ-choice-button:hover{border-color:#82cbbb;background:#f4fbf8}.organ-choice-button>svg:first-child{grid-row:span 2;color:var(--teal)}.organ-choice-button strong{font-size:16px}.organ-choice-button small{grid-column:2;color:var(--muted);font-size:11px}.organ-choice-button>svg:last-child{grid-column:3;grid-row:1 / span 2;color:var(--teal)}.organ-type-choices{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px;border:1px solid var(--line);border-radius:8px;padding:13px}.organ-type-choices legend{padding:0 5px;font-size:11px;font-weight:700;color:#526865}.organ-personal-card .organ-type-choices label{display:flex;align-items:center;gap:7px}.organ-personal-card .organ-type-choices input{width:15px;height:15px;accent-color:var(--teal)}@media(max-width:600px){.organ-choice-actions{grid-template-columns:1fr}.organ-type-choices{grid-template-columns:repeat(2,minmax(0,1fr))}}
 .institution-service-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}.institution-service-card{position:relative;display:grid;grid-template-columns:38px 1fr 18px;align-items:center;gap:7px;padding:16px;border:1px solid var(--line);border-radius:10px;color:var(--ink);text-decoration:none}.institution-service-card:hover{border-color:#82cbbb;background:#f7fbf9}.institution-service-card>strong,.institution-service-card>small{grid-column:2}.institution-service-card>small{color:var(--muted);font-size:10px;line-height:1.5}.institution-service-card>svg:last-child{grid-column:3;grid-row:1 / span 2;color:var(--teal)}.institution-metric-text{font-size:16px!important}.institution-profile{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}.institution-profile>div{display:grid;gap:6px}.institution-profile span{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.6px}.institution-profile strong{font-size:12px}@media(max-width:800px){.institution-service-grid{grid-template-columns:1fr 1fr}.institution-profile{grid-template-columns:1fr 1fr}}@media(max-width:560px){.institution-service-grid,.institution-profile{grid-template-columns:1fr}}
+
+/* Organ coordination lifecycle and request overview */
+.organ-services-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.organ-mode-switch{display:inline-flex;gap:4px;padding:4px;border:1px solid #dceae4;border-radius:12px;background:#f2f8f5}
+.organ-mode-switch button{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:40px;padding:0 18px;border:0;border-radius:9px;background:transparent;color:#55716b;font:700 12px 'DM Sans';cursor:pointer;transition:background .16s,color .16s,box-shadow .16s}
+.organ-mode-switch button:hover{color:var(--teal)}
+.organ-mode-switch button.selected{background:#fff;color:#087e79;box-shadow:0 2px 8px #163e3017}
+.workflow-path{padding:21px 22px 17px;overflow:hidden}
+.workflow-path-heading{display:flex;align-items:baseline;justify-content:space-between;gap:12px}
+.workflow-path-heading p{margin:0;color:var(--muted);font-size:11px}
+.workflow-path-steps{display:grid;grid-template-columns:repeat(10,minmax(98px,1fr));min-width:980px;list-style:none;margin:19px 0 14px;padding:0;position:relative}
+.workflow-path-steps:before{content:"";position:absolute;left:25px;right:25px;top:13px;height:2px;background:#dceae4}
+.workflow-path-steps li{position:relative;display:grid;align-content:start;gap:8px;padding-right:10px;color:#45645d}
+.workflow-path-steps li>span{z-index:1;display:grid;place-items:center;width:27px;height:27px;border:3px solid white;border-radius:50%;background:#dff1e9;box-shadow:0 0 0 1px #c9e3d8;color:#087e79;font-size:9px;font-weight:800}
+.workflow-path-steps li strong{max-width:90px;font-size:10px;line-height:1.35}
+.workflow-path-alternates{display:flex;align-items:center;gap:7px;flex-wrap:wrap;padding-top:12px;border-top:1px solid #edf2ef}
+.workflow-path-alternates span{margin-right:4px;color:#82938f;font-size:9px;text-transform:uppercase;letter-spacing:.6px}
+.workflow-path-alternates b{padding:5px 8px;border:1px dashed #d9e5df;border-radius:20px;background:#fbfcfb;color:#627671;font-size:9px;font-weight:600}
+.workflow-progress{width:100%;overflow-x:auto;padding:7px 2px 3px}
+.workflow-progress-steps{display:grid;grid-template-columns:repeat(10,minmax(82px,1fr));min-width:820px;position:relative;list-style:none;margin:0;padding:0}
+.workflow-progress-steps:before{content:"";position:absolute;top:9px;left:10px;right:10px;height:2px;background:#e3ece8}
+.workflow-progress-steps li{position:relative;display:grid;grid-template-columns:19px 1fr;align-items:start;gap:6px;padding-right:5px;color:#97a7a2}
+.workflow-step-node{z-index:1;display:grid;place-items:center;width:19px;height:19px;border:2px solid white;border-radius:50%;background:#e3ece8;box-shadow:0 0 0 1px #dce6e2;color:#71817d;font-size:8px;font-weight:700}
+.workflow-progress-steps li.complete .workflow-step-node{background:#178f78;box-shadow:0 0 0 1px #178f78;color:white}
+.workflow-progress-steps li.current{color:#145c54;font-weight:700}
+.workflow-progress-steps li.current .workflow-step-node{background:#f0a943;box-shadow:0 0 0 2px #f0a943;color:#fff}
+.workflow-step-label{padding-top:3px;font-size:9px;line-height:1.35}
+.workflow-progress.compact .workflow-progress-steps{min-width:720px;grid-template-columns:repeat(10,minmax(72px,1fr))}
+.workflow-progress.compact .workflow-step-label{font-size:8px}
+.workflow-progress.terminal{overflow:visible}
+.workflow-terminal{display:inline-flex;padding:7px 11px;border:1px solid #e7d8d4;border-radius:20px;background:#fbf4f2;color:#9c5147;font-size:10px;font-weight:700}
+.workflow-terminal-cancelled{border-color:#e9e1c9;background:#faf8ed;color:#887437}
+.workflow-terminal-expired,.workflow-terminal-unavailable{border-color:#ead8ce;background:#fbf4ef;color:#9a6245}
+.workflow-terminal-rejected{border-color:#ead2d2;background:#fcf2f2;color:#a44e4e}
+.latest-request-overview{display:grid;gap:14px}
+.latest-request-overview .panel-heading{margin-bottom:0}
+.latest-request-list{display:grid;gap:10px}
+.latest-request-card{min-width:0;padding:14px 16px;border:1px solid #e6efea;border-radius:12px;background:linear-gradient(120deg,#fff,#fbfdfc)}
+.latest-request-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:15px}
+.latest-request-heading h3{margin:6px 0 3px;font-size:13px}
+.latest-request-heading p{margin:0;color:var(--muted);font-size:10px;line-height:1.5}
+.latest-request-heading .text-button{flex:none;margin-top:6px}
+.request-kind{display:inline-flex;padding:4px 7px;border-radius:20px;background:#edf7f2;color:#23755e;font-size:8px;font-weight:800;letter-spacing:.6px}
+.request-kind.receive{background:#eff4fb;color:#4d6f9a}
+.latest-request-card>small{display:block;margin:5px 0 0 2px;color:#91a19c;font-size:9px}
+.latest-request-actions{display:flex;gap:8px;flex-wrap:wrap}
+@media(max-width:700px){.organ-services-toolbar{align-items:stretch}.organ-mode-switch{flex:1}.organ-mode-switch button{flex:1;padding:0 10px}.workflow-path{padding:17px 15px}.workflow-path-heading{align-items:flex-start;flex-direction:column;gap:5px}.workflow-path-steps{margin-top:15px}.latest-request-heading{flex-direction:column;gap:7px}.latest-request-heading .text-button{margin:0}.latest-request-card{padding:12px}.latest-request-actions>*{flex:1}.workflow-progress-steps{min-width:780px}}
+.organ-table .workflow-progress{max-width:260px}.workflow-path{overflow-x:auto}
+
+/* Organ workspace redesign: calmer hierarchy, larger work area, graph-based stages */
+.organ-workspace{width:min(100%,1600px);max-width:1600px;gap:24px}
+.organ-workspace>.page-heading{padding:8px 2px 0;margin-bottom:0}
+.organ-workspace>.page-heading h1{font-size:34px;letter-spacing:-1.1px}
+.organ-workspace>.page-heading p{max-width:760px;font-size:14px;line-height:1.55}
+.organ-section-nav{display:flex;align-items:stretch;gap:5px;overflow-x:auto;padding:0 0 1px;border-bottom:1px solid #dce8e3;scrollbar-width:thin}
+.organ-section-nav a{position:relative;display:flex;align-items:center;justify-content:center;gap:8px;min-height:48px;padding:0 16px;color:#647873;text-decoration:none;font-size:12px;font-weight:650;white-space:nowrap;border-radius:9px 9px 0 0;transition:color .16s,background .16s}
+.organ-section-nav a:hover{background:#eaf4ef;color:#146f61}
+.organ-section-nav a.active{background:#e9f5ef;color:#087e79}
+.organ-section-nav a.active:after{content:"";position:absolute;left:14px;right:14px;bottom:-1px;height:3px;border-radius:4px 4px 0 0;background:#0b8b78}
+.organ-section-nav svg{opacity:.85}
+.organ-workspace>.panel,.organ-workspace .panel{padding:24px;border-radius:15px}
+.organ-workspace .panel-heading h2,.organ-workspace .panel>h2{font-size:21px;letter-spacing:-.35px}
+.organ-workspace .panel-heading p{font-size:12px;line-height:1.55}
+.organ-workspace .organ-metrics{grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+.organ-workspace .organ-metrics .metric-card{grid-template-columns:34px minmax(0,1fr);grid-template-rows:auto auto auto;align-items:center;column-gap:11px;row-gap:3px;min-height:100px;padding:13px 15px;border-radius:12px}
+.organ-workspace .organ-metrics .metric-icon{grid-column:1;grid-row:1 / span 3;width:32px;height:32px}
+.organ-workspace .organ-metrics .eyebrow{grid-column:2;align-self:end;font-size:9px;letter-spacing:.8px}
+.organ-workspace .organ-metrics strong{grid-column:2;font-size:24px;line-height:1.05}
+.organ-workspace .organ-metrics small{grid-column:2;align-self:start;font-size:9px;line-height:1.35}
+.organ-workspace .organ-table{font-size:12px}
+.organ-workspace .organ-table th{padding:13px 12px;font-size:10px}
+.organ-workspace .organ-table td{padding:15px 12px;font-size:12px}
+.organ-workspace .organ-table td strong{font-size:12px}
+.organ-workspace .organ-table td small{font-size:10px}
+.organ-create-fields{padding:20px!important;gap:14px}
+.organ-create-fields label,.organ-status-action label{font-size:11px}
+.organ-create-fields input,.organ-create-fields select,.organ-status-action select{height:42px;font-size:13px}
+.organ-personal-record{padding:18px;border-radius:12px;gap:10px;line-height:1.5}
+.organ-personal-record strong{font-size:14px}
+.organ-workspace .organ-detail-grid{padding:24px}
+.organ-workspace .organ-detail-grid small{font-size:10px}
+.organ-workspace .organ-detail-grid strong{font-size:14px}
+.workflow-path{padding:24px!important;overflow:visible!important;border-color:#dfeae5;background:linear-gradient(135deg,#fff 0%,#f9fcfa 100%)}
+.workflow-path-heading{align-items:center}
+.workflow-path-heading>div p{margin:6px 0 0;color:#738681;font-size:12px}
+.workflow-path-key{display:inline-flex;align-items:center;gap:8px;color:#71827d;font-size:10px;white-space:nowrap}
+.workflow-path-key:before{content:"";width:18px;height:2px;background:#0b8b78}
+.flow-graph{display:grid;gap:35px;margin:28px 0 20px}
+.flow-graph-row{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:24px;list-style:none;margin:0;padding:0;direction:ltr}
+.flow-graph-row.returning{direction:rtl}
+.flow-node{position:relative;display:grid;grid-template-columns:32px minmax(0,1fr);align-content:center;align-items:center;column-gap:10px;min-height:82px;padding:13px 14px;border:1px solid #dce8e3;border-radius:12px;background:#fff;color:#395852;box-shadow:0 3px 10px #163c3010;direction:ltr}
+.flow-node-number{grid-row:span 2;display:grid;place-items:center;width:30px;height:30px;border:1px solid #cbe6db;border-radius:50%;background:#eaf6f0;color:#087e79;font-size:9px;font-weight:800}
+.flow-node strong{font-size:12px;line-height:1.35}
+.flow-node.complete{border-color:#a9d9c8;background:#f2faf6}
+.flow-node.complete .flow-node-number{border-color:#178f78;background:#178f78;color:#fff}
+.flow-node.current{border-color:#e6bb70;background:#fffaf1;box-shadow:0 0 0 3px #f6ead3,0 3px 10px #163c3010}
+.flow-node.current .flow-node-number{border-color:#e7ad4a;background:#e7ad4a;color:#fff}
+.flow-node:not(:last-child):after{position:absolute;z-index:2;top:50%;right:-21px;transform:translateY(-50%);color:#148b78;font-size:19px;font-weight:500;line-height:1;content:"\2190"}
+.flow-graph-row.returning .flow-node:not(:last-child):after{right:auto;left:-21px;content:"\2190"}
+.flow-graph-row.forward .flow-node:last-child .flow-turn{position:absolute;z-index:2;left:50%;bottom:-27px;transform:translateX(-50%);color:#148b78;font-size:19px;line-height:1}
+.workflow-path .flow-graph-row.forward .flow-node:last-child:after,.workflow-progress .flow-graph-row.forward .flow-node:last-child:after{display:none}
+.workflow-path-alternates{gap:8px;padding-top:15px}
+.workflow-path-alternates span{width:100%;font-size:10px}
+.workflow-path-alternates b{padding:7px 10px;font-size:10px}
+.workflow-progress{overflow:visible;padding:0}
+.workflow-progress .flow-graph{gap:24px;margin:10px 0 2px}
+.workflow-progress .flow-graph-row{gap:16px}
+.workflow-progress .flow-node{min-height:66px;padding:9px 10px;grid-template-columns:26px minmax(0,1fr);column-gap:8px;border-radius:10px;box-shadow:none}
+.workflow-progress .flow-node-number{width:25px;height:25px;font-size:8px}
+.workflow-progress .flow-node strong{font-size:10px}
+.workflow-progress .flow-node:not(:last-child):after{right:-15px;font-size:15px}
+.workflow-progress .flow-graph-row.returning .flow-node:not(:last-child):after{left:-15px}
+.workflow-progress .flow-graph-row.forward .flow-node:last-child .flow-turn{bottom:-22px;font-size:15px}
+.workflow-progress.compact .flow-graph{gap:20px;margin:8px 0 0}
+.workflow-progress.compact .flow-graph-row{gap:12px}
+.workflow-progress.compact .flow-node{min-height:58px;padding:8px;grid-template-columns:22px minmax(0,1fr);column-gap:6px}
+.workflow-progress.compact .flow-node-number{width:21px;height:21px}
+.workflow-progress.compact .flow-node strong{font-size:9px}
+.workflow-progress.compact .flow-node:not(:last-child):after{right:-12px;font-size:13px}
+.workflow-progress.compact .flow-graph-row.returning .flow-node:not(:last-child):after{left:-12px}
+.workflow-progress.compact .flow-graph-row.forward .flow-node:last-child .flow-turn{bottom:-18px;font-size:13px}
+.workflow-progress.terminal{overflow:visible}
+.workflow-terminal{padding:8px 13px;font-size:11px}
+.latest-request-card{padding:18px;border-radius:13px}
+.latest-request-heading h3{font-size:15px}
+.latest-request-heading p{font-size:12px}
+.latest-request-card>small{font-size:10px}
+@media(max-width:1100px){.organ-workspace .organ-metrics{grid-template-columns:repeat(3,minmax(0,1fr))}.flow-graph-row{gap:18px}.flow-node{padding:11px;grid-template-columns:27px minmax(0,1fr);column-gap:8px}.flow-node strong{font-size:11px}.flow-node:not(:last-child):after{right:-16px}.flow-graph-row.returning .flow-node:not(:last-child):after{left:-16px}}
+@media(max-width:760px){.organ-workspace{gap:18px}.organ-workspace>.page-heading h1{font-size:28px}.organ-section-nav{margin-right:-14px;padding-right:14px}.organ-section-nav a{min-height:44px;padding:0 13px;font-size:11px}.organ-workspace>.panel,.organ-workspace .panel{padding:18px}.organ-workspace .organ-metrics{grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.organ-workspace .organ-metrics .metric-card{min-height:88px;padding:10px}.organ-workspace .organ-metrics .metric-card strong{font-size:21px}.workflow-path{padding:18px!important}.workflow-path-heading{align-items:flex-start;flex-direction:column;gap:9px}.flow-graph{overflow-x:auto;padding:0 2px 8px;scrollbar-width:thin}.flow-graph-row{grid-template-columns:repeat(5,minmax(126px,1fr));min-width:700px;gap:22px}.flow-node{min-height:70px}.workflow-progress .flow-graph-row,.workflow-progress.compact .flow-graph-row{min-width:630px}.workflow-path-alternates{align-items:flex-start}.organ-create-fields{grid-template-columns:1fr 1fr}}
+@media(max-width:480px){.organ-workspace .organ-metrics{grid-template-columns:1fr 1fr}.organ-workspace .organ-metrics .metric-card{grid-template-columns:28px minmax(0,1fr);column-gap:7px}.organ-workspace .organ-metrics .metric-icon{width:27px;height:27px}.organ-workspace .organ-metrics .eyebrow{font-size:8px}.organ-workspace .organ-metrics small{font-size:8px}.organ-create-fields{grid-template-columns:1fr}.latest-request-actions>*{flex:1}}
+.organ-stage-chip{display:inline-flex;max-width:170px;padding:6px 9px;border:1px solid #d1e8dd;border-radius:7px;background:#eff8f3;color:#1c6a58;font-size:10px;font-weight:700;text-transform:capitalize;white-space:normal;line-height:1.3}
+.workflow-progress.compact .flow-node.current{box-shadow:0 0 0 2px #f6ead3}
+@media(max-width:760px){.organ-stage-chip{font-size:9px;padding:5px 7px}}
+.flow-graph-row.forward .flow-node:not(:last-child):after{content:"\2192"}
+.flow-graph-row.returning .flow-node:not(:last-child):after{content:"\2190"}
+
+/* Organ filters and list sizing */
+.main-content,.organ-workspace,.organ-workspace>*{min-width:0}
+.organ-workspace{width:100%;max-width:1600px;overflow-x:clip}
+.organ-filter-form{width:100%;max-width:100%;grid-template-columns:minmax(190px,1.35fr) repeat(3,minmax(135px,1fr)) auto;align-items:end;gap:12px}
+.organ-filter-form label{min-width:0;max-width:100%;gap:7px;white-space:nowrap}
+.organ-filter-form input,.organ-filter-form select{width:100%;min-width:0;max-width:100%;height:42px;padding:0 12px;font-size:12px}
+.organ-filter-form>button[type=submit]{width:fit-content;min-width:132px;min-height:42px;justify-self:start;align-self:end;padding:0 16px;font-size:12px}
+.organ-table-wrap{width:100%;max-width:100%;min-width:0;overflow-x:auto;overscroll-behavior-x:contain}
+.organ-table-donors,.organ-table-recipients{width:100%;min-width:0;table-layout:fixed}
+.organ-table-donors th,.organ-table-donors td,.organ-table-recipients th,.organ-table-recipients td{white-space:normal;overflow-wrap:anywhere;line-height:1.4}
+.organ-table-donors th:nth-child(1){width:20%}.organ-table-donors th:nth-child(2){width:16%}.organ-table-donors th:nth-child(3){width:20%}.organ-table-donors th:nth-child(6){width:13%}.organ-table-donors th:nth-child(7){width:14%}.organ-table-donors th:nth-child(8){width:17%}
+.organ-table-donors th:nth-child(4),.organ-table-donors td:nth-child(4),.organ-table-donors th:nth-child(5),.organ-table-donors td:nth-child(5),.organ-table-donors th:nth-child(9),.organ-table-donors td:nth-child(9),.organ-table-donors th:nth-child(10),.organ-table-donors td:nth-child(10){display:none}
+.organ-table-recipients th:nth-child(1){width:19%}.organ-table-recipients th:nth-child(2){width:16%}.organ-table-recipients th:nth-child(3){width:18%}.organ-table-recipients th:nth-child(5){width:13%}.organ-table-recipients th:nth-child(7){width:10%}.organ-table-recipients th:nth-child(8){width:12%}.organ-table-recipients th:nth-child(9){width:12%}
+.organ-table-recipients th:nth-child(4),.organ-table-recipients td:nth-child(4),.organ-table-recipients th:nth-child(6),.organ-table-recipients td:nth-child(6){display:none}
+.organ-table-donors td:first-child a,.organ-table-recipients td:first-child a{display:inline-block;max-width:100%;overflow-wrap:anywhere}
+@media(max-width:1200px){.organ-filter-form{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.organ-filter-form>button[type=submit]{min-width:132px}}
+@media(max-width:760px){.organ-filter-form{grid-template-columns:repeat(2,minmax(0,1fr));padding:16px!important}.organ-filter-form label{white-space:normal}.organ-table-donors th,.organ-table-donors td,.organ-table-recipients th,.organ-table-recipients td{padding:11px 8px!important;font-size:10px!important}.organ-stage-chip{max-width:100%;font-size:9px}}
+@media(max-width:520px){.organ-filter-form{grid-template-columns:minmax(0,1fr)}.organ-filter-form>button[type=submit]{width:100%;justify-self:stretch}}
+
+/* Donor detail layout cleanup */
+.organ-detail-grid{min-width:0}
+.organ-detail-grid>div{min-width:0}
+.organ-detail-grid>div strong{overflow-wrap:anywhere;line-height:1.45}
+.donor-contact-panel{grid-template-columns:repeat(4,minmax(0,1fr));align-items:start}
+.donor-contact-panel>div:last-child{grid-column:span 2}
+.donor-contact-panel>div:last-child strong{font-size:12px;line-height:1.55;text-transform:none}
+.donor-edit-form{grid-template-columns:repeat(2,minmax(180px,1fr)) auto;align-items:end;gap:16px}
+.donor-edit-form .detail-editor-heading{grid-column:1/-1;margin-bottom:0}
+.detail-editor-heading h2{margin:5px 0;font-size:17px}
+.detail-editor-heading p{margin:0;font-size:11px}
+.donor-edit-form label{min-width:0}
+.donor-edit-form input,.donor-edit-form select{width:100%;min-width:0;height:42px}
+.donor-edit-form>button{justify-self:start;align-self:end;min-width:150px;height:42px;padding:0 16px}
+.detail-action-panel{display:flex;align-items:center;justify-content:space-between;gap:18px}
+.detail-action-panel p{margin:5px 0 0;font-size:12px}
+.detail-action-panel .offer-actions{justify-content:flex-end}
+.consent-timeline-panel .panel-heading{margin-bottom:18px}
+.consent-timeline{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;list-style:none;margin:0;padding:0}
+.consent-timeline li{position:relative;display:grid;align-content:start;gap:8px;min-width:0;padding:16px 16px 16px 38px;border:1px solid #e1ebe6;border-radius:11px;background:#fbfdfc}
+.consent-status-dot{position:absolute;top:19px;left:16px;width:10px;height:10px;border-radius:50%;background:#d9a33d;box-shadow:0 0 0 4px #f7efd9}
+.consent-status-dot.accepted,.consent-status-dot.verified{background:#188a70;box-shadow:0 0 0 4px #e3f3eb}
+.consent-status-dot.rejected,.consent-status-dot.declined{background:#b8504a;box-shadow:0 0 0 4px #f7e9e8}
+.consent-timeline-main{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.consent-timeline-main strong{font-size:12px}
+.consent-timeline li>small{color:#71847e;font-size:10px;line-height:1.45}
+.consent-timeline .pill{width:max-content}
+.detail-related-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px}
+.detail-related-card{display:grid;gap:5px;padding:14px;border:1px solid #e3ece8;border-radius:10px;background:#fbfdfc}
+.detail-related-card strong{font-size:12px}
+.detail-related-card span{color:#71847e;font-size:11px;text-transform:capitalize}
+@media(max-width:760px){.donor-contact-panel{grid-template-columns:repeat(2,minmax(0,1fr))}.donor-contact-panel>div:last-child{grid-column:1/-1}.donor-edit-form{grid-template-columns:1fr 1fr}.donor-edit-form .detail-editor-heading{grid-column:1/-1}.donor-edit-form>button{grid-column:1/-1;width:max-content}.detail-action-panel{align-items:flex-start;flex-direction:column}.detail-action-panel .offer-actions{justify-content:flex-start}}
+@media(max-width:480px){.donor-contact-panel{grid-template-columns:1fr}.donor-contact-panel>div:last-child{grid-column:auto}.donor-edit-form{grid-template-columns:1fr}.donor-edit-form .detail-editor-heading,.donor-edit-form>button{grid-column:auto}.donor-edit-form>button{width:100%}}
+.donor-edit-form{grid-template-columns:250px 250px max-content;justify-content:start;gap:16px 18px}
+.donor-edit-form select{width:250px;max-width:100%;height:40px;padding:0 11px;font-size:12px}
+.donor-edit-form>button{min-width:145px;width:max-content;height:40px}
+@media(max-width:760px){.donor-edit-form{grid-template-columns:repeat(2,minmax(0,250px))}.donor-edit-form select{width:100%}}
+@media(max-width:480px){.donor-edit-form{grid-template-columns:minmax(0,1fr)}.donor-edit-form select{width:100%}}
+.donor-edit-form{display:grid!important;grid-template-columns:250px 250px max-content!important;justify-content:start!important;align-items:end!important}
+.donor-edit-form label{width:250px!important;max-width:100%!important}
+.donor-edit-form select{display:block!important;width:250px!important;max-width:100%!important}
+@media(max-width:760px){.donor-edit-form{grid-template-columns:repeat(2,minmax(0,250px))!important}.donor-edit-form label,.donor-edit-form select{width:100%!important}}
+@media(max-width:480px){.donor-edit-form{grid-template-columns:minmax(0,1fr)!important}.donor-edit-form label,.donor-edit-form select{width:100%!important}}
+
+.admin-recent-audit .panel-heading{align-items:center;margin-bottom:12px}
+.admin-recent-audit .panel-heading .button{display:inline-flex;align-items:center;gap:8px}
+.admin-audit-preview{display:grid;gap:0;list-style:none;margin:0;padding:0}
+.admin-audit-preview li{display:grid;grid-template-columns:9px minmax(0,1fr) auto;align-items:center;gap:12px;padding:12px 2px;border-top:1px solid #edf2ef}
+.admin-audit-dot{width:8px;height:8px;border-radius:50%;background:#16a085;box-shadow:0 0 0 4px #e9f6f0}
+.admin-audit-preview li>div{display:grid;gap:4px;min-width:0}
+.admin-audit-preview li strong{font-size:12px;text-transform:capitalize}
+.admin-audit-preview li small,.admin-audit-preview li time{color:#7d8d89;font-size:10px;overflow-wrap:anywhere}
+.admin-audit-table{min-width:1050px}
+.admin-audit-table .audit-id{max-width:210px;overflow-wrap:anywhere;white-space:normal}
+.admin-audit-page .page-heading .offer-actions{justify-content:flex-end}
+@media(max-width:700px){.admin-recent-audit .panel-heading{align-items:flex-start;flex-direction:column}.admin-audit-preview li{grid-template-columns:9px minmax(0,1fr)}.admin-audit-preview li time{grid-column:2}.admin-audit-page .page-heading{gap:12px;flex-direction:column}.admin-audit-page .page-heading .offer-actions{justify-content:flex-start}}
+
+/* Admin overview sizing */
+.admin-workspace{width:min(100%,1220px);max-width:1220px;gap:17px}
+.admin-workspace>.welcome-banner{padding:23px 28px;border-radius:13px}
+.admin-workspace>.welcome-banner h1{font-size:27px;margin:5px 0}
+.admin-workspace>.welcome-banner p{font-size:12px}
+.admin-workspace>.workflow-path{padding:17px 19px!important;border-radius:13px}
+.admin-workspace .workflow-path-heading>div p{font-size:10px}
+.admin-workspace .flow-graph{gap:25px;margin:19px 0 14px}
+.admin-workspace .flow-graph-row{gap:18px}
+.admin-workspace .flow-node{min-height:64px;padding:9px 10px;grid-template-columns:25px minmax(0,1fr);column-gap:7px;border-radius:10px}
+.admin-workspace .flow-node-number{width:24px;height:24px}
+.admin-workspace .flow-node strong{font-size:10px}
+.admin-workspace .flow-node:not(:last-child):after{right:-16px;font-size:15px}
+.admin-workspace .flow-graph-row.returning .flow-node:not(:last-child):after{left:-16px}
+.admin-workspace .flow-graph-row.forward .flow-node:last-child .flow-turn{bottom:-22px;font-size:15px}
+.admin-workspace .workflow-path-alternates{padding-top:10px;gap:6px}
+.admin-workspace .workflow-path-alternates b{font-size:9px;padding:5px 8px}
+.admin-workspace>.metric-grid{grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+.admin-workspace>.metric-grid .metric-card{grid-template-columns:30px minmax(0,1fr);grid-template-rows:auto auto auto;align-items:center;column-gap:9px;row-gap:2px;min-height:82px;padding:11px 13px;border-radius:11px}
+.admin-workspace>.metric-grid .metric-icon{grid-column:1;grid-row:1 / span 3;width:29px;height:29px}
+.admin-workspace>.metric-grid .eyebrow{grid-column:2;font-size:9px}
+.admin-workspace>.metric-grid .metric-card strong{grid-column:2;font-size:21px;line-height:1.05}
+.admin-workspace>.metric-grid .metric-card small{grid-column:2;font-size:9px;line-height:1.3}
+.admin-workspace>.panel{padding:18px;border-radius:13px}
+.admin-workspace>.panel .panel-heading{margin-bottom:12px}
+.admin-workspace>.panel .panel-heading h2{font-size:17px}
+.admin-workspace>.panel .panel-heading p{font-size:11px}
+.admin-workspace .organ-table{font-size:10px}
+.admin-workspace .organ-table th{padding:9px 7px;font-size:8px;white-space:normal}
+.admin-workspace .organ-table td{padding:10px 7px;font-size:10px;white-space:normal}
+.admin-workspace .organ-table td strong{font-size:10px}
+.admin-workspace .organ-table td small{font-size:8px}
+.admin-workspace .admin-recent-audit .admin-audit-preview li{padding:9px 2px}
+.admin-workspace .admin-audit-preview li strong{font-size:11px}
+.admin-workspace .admin-audit-preview li small,.admin-workspace .admin-audit-preview li time{font-size:9px}
+.admin-workspace .admin-recent-audit .panel-heading .button{padding:8px 10px;font-size:10px}
+@media(max-width:1000px){.admin-workspace{width:100%}.admin-workspace>.metric-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.admin-workspace .flow-graph-row{gap:14px}.admin-workspace .flow-node{padding:8px;grid-template-columns:22px minmax(0,1fr)}.admin-workspace .flow-node-number{width:21px;height:21px}.admin-workspace .flow-node strong{font-size:9px}.admin-workspace .flow-node:not(:last-child):after{right:-13px;font-size:13px}.admin-workspace .flow-graph-row.returning .flow-node:not(:last-child):after{left:-13px}}
+@media(max-width:700px){.admin-workspace{gap:14px}.admin-workspace>.welcome-banner{padding:19px}.admin-workspace>.welcome-banner h1{font-size:23px}.admin-workspace>.workflow-path{padding:14px!important}.admin-workspace .flow-graph-row{grid-template-columns:repeat(5,minmax(118px,1fr));min-width:660px}.admin-workspace .metric-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.admin-workspace>.panel{padding:14px}.admin-workspace .admin-recent-audit .panel-heading{gap:9px}}
+
+/* Keep the admin activity preview inside its card at every viewport width. */
+.admin-workspace,.admin-workspace>*{min-width:0;max-width:100%}
+.admin-recent-audit{min-width:0;overflow:hidden}
+.admin-recent-audit .panel-heading>div{min-width:0}
+.admin-recent-audit .panel-heading .button{flex:none;white-space:nowrap}
+.admin-audit-preview{width:100%;min-width:0}
+.admin-workspace .admin-audit-preview li{display:block;min-width:0;padding:0;border-top:1px solid #edf2ef}
+.admin-audit-item summary{display:grid;grid-template-columns:9px minmax(0,1fr) minmax(0,150px);align-items:center;gap:11px;min-width:0;padding:9px 2px;cursor:pointer;list-style:none}
+.admin-audit-item summary::-webkit-details-marker{display:none}
+.admin-audit-item summary:focus-visible{outline:2px solid #159888;outline-offset:2px;border-radius:4px}
+.admin-audit-summary{display:grid;gap:3px;min-width:0;overflow:hidden}
+.admin-audit-summary strong,.admin-audit-summary small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.admin-audit-item summary time{max-width:150px;text-align:right;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#7d8d89;font-size:9px}
+.admin-audit-details{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px 16px;margin:0 0 10px 20px;padding:10px 12px;background:#f7faf8;border-radius:7px}
+.admin-audit-details>div{display:grid;gap:3px;min-width:0}
+.admin-audit-details dt{color:#7d8d89;font-size:8px;text-transform:uppercase;letter-spacing:.06em}
+.admin-audit-details dd{margin:0;font-size:10px;overflow-wrap:anywhere}
+.admin-audit-full-list{list-style:none;padding:0;margin:0;border-top:1px solid #edf2ef}
+.admin-audit-full-list>li{border-bottom:1px solid #edf2ef;min-width:0}
+.admin-audit-row{appearance:none;width:100%;min-width:0;display:grid;grid-template-columns:9px minmax(0,1fr) minmax(0,150px) auto;align-items:center;gap:10px;padding:9px 2px;border:0;background:transparent;color:inherit;text-align:left;cursor:pointer}
+.admin-audit-row:hover{background:#f7faf8}
+.admin-audit-row:focus-visible,.admin-institution-row:focus-visible{outline:2px solid #159888;outline-offset:2px;border-radius:4px}
+.admin-audit-row time{max-width:150px;text-align:right;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#7d8d89;font-size:9px}
+.admin-row-hint{color:#087f79;font-size:9px;white-space:nowrap}
+.admin-audit-row .admin-audit-summary{display:grid;gap:3px;min-width:0;overflow:hidden}
+.admin-audit-row .admin-audit-summary strong,.admin-audit-row .admin-audit-summary small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.admin-institution-list{display:grid;gap:8px;list-style:none;margin:0;padding:0}
+.admin-institution-list>li{min-width:0;border:1px solid #e6eeeb;border-radius:9px;background:#fff;overflow:hidden}
+.admin-institution-row{appearance:none;width:100%;min-width:0;display:grid;grid-template-columns:minmax(180px,1.6fr) repeat(2,minmax(62px,.45fr)) auto auto;align-items:center;gap:18px;padding:12px 14px;border:0;background:#fff;color:inherit;text-align:left;cursor:pointer}
+.admin-institution-row:hover{background:#f8fbf9}
+.admin-institution-name,.admin-institution-stat{display:grid;gap:4px;min-width:0}
+.admin-institution-name strong{font-size:12px;color:#142d2a}
+.admin-institution-name small,.admin-institution-stat small{font-size:9px;color:#7d8d89;text-transform:capitalize}
+.admin-institution-stat strong{font-size:12px;font-weight:650}
+.admin-status{padding:5px 8px;border:1px solid #dcebe5;border-radius:999px;background:#f1f8f5;color:#24735e;font-size:9px;font-weight:700;white-space:nowrap}
+.admin-status.status-inactive{background:#faf2ef;border-color:#efded8;color:#9a5441}
+.admin-status.status-pending_verification{background:#fff8e9;border-color:#f0e4c4;color:#8c6a21}
+.admin-institution-details{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px 18px;padding:13px 15px;border-top:1px solid #edf2ef;background:#f8fbf9}
+.admin-institution-details>div,.admin-status-control{display:grid;align-content:start;gap:4px;min-width:0}
+.admin-institution-details small,.admin-status-control{font-size:9px;color:#7d8d89}
+.admin-institution-details strong{font-size:11px;overflow-wrap:anywhere}
+.admin-institution-location{grid-column:span 2}
+.admin-status-control select{width:min(100%,190px);height:32px;padding:0 8px;font-size:10px}
+@media(max-width:700px){.admin-institution-row{grid-template-columns:minmax(0,1fr) auto;gap:9px 12px;padding:11px}.admin-institution-name{grid-column:1}.admin-institution-stat{display:none}.admin-institution-row .admin-status{grid-column:2;grid-row:1}.admin-institution-row .admin-row-hint{grid-column:1/-1}.admin-institution-details{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.admin-institution-location{grid-column:1/-1}}
+
+/* Personal donor interest form and inline service selection. */
+.organ-donor-interest{max-width:1120px;padding:25px 28px!important;border:1px solid #dfeae6;border-radius:16px!important;box-shadow:0 10px 28px rgba(24,66,56,.045)}
+.donor-interest-heading{display:flex;align-items:flex-start;gap:13px;margin-bottom:21px}
+.donor-interest-heading>.metric-icon{flex:none;width:40px;height:40px;border-radius:12px}
+.donor-interest-heading h2{margin:4px 0 5px!important;font-size:23px!important;letter-spacing:-.45px!important}
+.donor-interest-heading p{max-width:720px;margin:0;color:#72847f;font-size:12px;line-height:1.55}
+.organ-donor-interest .organ-personal-record-list{grid-template-columns:repeat(auto-fit,minmax(245px,1fr));gap:10px;margin:0 0 20px}
+.organ-donor-interest .organ-personal-record{align-content:start;gap:8px;padding:13px;border-radius:11px;background:#f8fbf9;font-size:11px}
+.organ-donor-interest .organ-personal-record .workflow-progress{overflow:hidden}
+.organ-donor-interest .organ-create-form{grid-template-columns:minmax(0,1fr);gap:14px;max-width:760px}
+.organ-donor-interest .organ-create-form>.organ-service-field,.organ-donor-interest .organ-create-form>.organ-type-choices,.organ-donor-interest .organ-create-form>button{grid-column:1}
+.organ-donor-interest .organ-create-form>label{gap:7px;font-size:10px}
+.organ-donor-interest .organ-create-form select{width:100%;height:43px;border-radius:9px;background-color:#fbfdfc}
+.organ-service-field select{font-weight:600}
+.organ-service-address{display:block;box-sizing:border-box;max-width:100%;margin-top:3px;padding:7px 10px;border:1px solid #e5eeea;border-radius:7px;background:#f7faf8;color:#647770;font-size:10px;font-weight:400;line-height:1.45;overflow-wrap:anywhere;white-space:normal}
+.service-distance-note{display:flex;align-items:center;flex-wrap:wrap;gap:5px 10px;color:#71847e;font-size:9px;font-weight:400;line-height:1.4}
+.service-distance-note .text-button{padding:0;font-size:9px;white-space:nowrap}
+.service-distance-note+.error{font-size:10px}
+.organ-donor-interest .organ-type-choices{grid-template-columns:repeat(3,minmax(0,1fr));gap:5px 10px;padding:13px 15px;border-color:#e0eae6;border-radius:10px;background:#fbfdfc}
+.organ-donor-interest .organ-type-choices label{min-height:30px;padding:4px 6px;border-radius:6px;font-size:10px}
+.organ-donor-interest .organ-type-choices label:has(input:checked){background:#eaf6f1;color:#176d62}
+.organ-donor-interest .organ-type-choices input{flex:none;width:15px;height:15px;accent-color:#07877e}
+.organ-donor-interest .organ-create-form>button{min-height:43px;margin-top:1px;border-radius:9px}
+@media(max-width:650px){.organ-donor-interest{padding:18px!important}.organ-donor-interest .organ-create-form{grid-template-columns:minmax(0,1fr)}.organ-donor-interest .organ-create-form>.organ-service-field,.organ-donor-interest .organ-create-form>.organ-type-choices,.organ-donor-interest .organ-create-form>button{grid-column:1}.organ-donor-interest .organ-type-choices{grid-template-columns:repeat(2,minmax(0,1fr))}.donor-interest-heading h2{font-size:20px!important}}
+.organ-donor-interest .organ-personal-record-list{display:grid;grid-template-columns:1fr;gap:7px;margin:0 0 18px}
+.donor-request-card{display:block!important;padding:0!important;overflow:hidden;border-color:#e3ece8!important;background:#fff!important}
+.donor-request-summary{appearance:none;width:100%;min-width:0;display:grid;grid-template-columns:minmax(0,1fr) auto auto;align-items:center;gap:12px;padding:12px 14px;border:0;background:#fbfdfc;color:inherit;text-align:left;cursor:pointer}
+.donor-request-summary:hover{background:#f4faf7}
+.donor-request-summary:focus-visible{outline:2px solid #138b7c;outline-offset:-2px}
+.donor-request-primary{display:grid;gap:4px;min-width:0}
+.donor-request-primary strong{font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.donor-request-primary small{color:#73857f;font-size:10px}
+.donor-request-status{padding:5px 8px;border-radius:999px;background:#edf7f2;color:#26735e;font-size:9px;font-weight:700;text-transform:capitalize;white-space:nowrap}
+.donor-request-status.status-registered{background:#fff6e5;color:#87631b}
+.donor-request-status.status-withdrawn,.donor-request-status.status-rejected{background:#fbefed;color:#a15148}
+.donor-request-toggle{color:#087f79;font-size:9px;font-weight:700;white-space:nowrap}
+.donor-request-details{display:grid;gap:13px;padding:14px;border-top:1px solid #e8efec;background:#fff}
+.donor-request-facts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.donor-request-facts>span{display:grid;gap:3px;min-width:0}
+.donor-request-facts small,.donor-request-workflow>.eyebrow,.donor-request-consents>.eyebrow{color:#71847e;font-size:8px;letter-spacing:.06em;text-transform:uppercase}
+.donor-request-facts strong{font-size:10px;overflow-wrap:anywhere}
+.donor-request-workflow,.donor-request-consents{display:grid;gap:8px;min-width:0}
+.donor-request-workflow>p,.donor-request-consents p{margin:0;color:#657772;font-size:10px;line-height:1.5}
+.donor-request-organs{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:7px}
+.donor-request-organs>div{display:grid;gap:4px;padding:9px;border:1px solid #e8efec;border-radius:7px;background:#f9fbfa}
+.donor-request-organs strong{font-size:10px}
+.donor-request-organs small{color:#6e807b;font-size:9px;line-height:1.4}
+.donor-request-withdraw{min-height:34px!important;padding:7px 11px!important;font-size:10px!important}
+@media(max-width:600px){.donor-request-summary{grid-template-columns:minmax(0,1fr) auto;gap:7px 10px;padding:11px}.donor-request-toggle{grid-column:1/-1}.donor-request-facts{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:700px){.admin-audit-item summary{grid-template-columns:9px minmax(0,1fr) max-content;gap:8px}.admin-audit-item summary time{max-width:88px;font-size:8px}.admin-audit-details{grid-template-columns:1fr;margin-left:17px}}
+@media(max-width:700px){.admin-audit-row{grid-template-columns:9px minmax(0,1fr) auto;gap:7px}.admin-audit-row time{grid-column:2;grid-row:2;max-width:none;text-align:left;font-size:8px}.admin-audit-row .admin-row-hint{grid-column:3;grid-row:1 / span 2}.admin-audit-details{grid-template-columns:1fr}}
+.organ-service-address{display:block;margin-top:1px;color:#435d57;font-size:10px;font-weight:500;line-height:1.4}

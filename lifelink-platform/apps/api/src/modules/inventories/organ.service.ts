@@ -50,12 +50,18 @@ export async function updateOrganRecord(actor: AuthContext, organId: string, inp
 	});
 }
 export async function transitionOrgan(actor: AuthContext, organId: string, toStatus: OrganStatus) {
-	const organ = await database.organRecord.findUnique({ where: { id: organId }, select: { id: true, institutionId: true, status: true, reference: true, destinationCentreId: true } });
+	const organ = await database.organRecord.findUnique({ where: { id: organId }, select: { id: true, institutionId: true, donorId: true, status: true, reference: true, destinationCentreId: true } });
 	if (!organ) throw new ApiError(404, "ORGAN_NOT_FOUND", "Organ record not found.");
 	await assertInstitution(actor, organ.institutionId);
+	if (new Set<OrganStatus>([OrganStatus.MATCHING, OrganStatus.OFFERED, OrganStatus.ACCEPTED]).has(toStatus)) throw new ApiError(409, "COORDINATION_ACTION_REQUIRED", "Matching, offer creation, and offer acceptance must use their dedicated workflow actions.");
+	if (new Set<OrganStatus>([OrganStatus.RETRIEVAL_SCHEDULED, OrganStatus.RETRIEVAL_IN_PROGRESS, OrganStatus.RETRIEVED]).has(toStatus)) throw new ApiError(409, "PROCUREMENT_WORKFLOW_REQUIRED", "Retrieval states can only be advanced through the procurement workflow.");
 	if (!isOrganTransitionAllowed(organ.status, toStatus)) throw new ApiError(409, "INVALID_ORGAN_TRANSITION", "The requested organ workflow transition is not allowed.");
 	return database.$transaction(async (tx) => {
 		const updated = await tx.organRecord.update({ where: { id: organ.id }, data: { status: toStatus } });
+		if (new Set<OrganStatus>([OrganStatus.COMPLETED, OrganStatus.CANCELLED, OrganStatus.EXPIRED, OrganStatus.DISCARDED]).has(toStatus)) {
+			const otherActiveOrgans = await tx.organRecord.count({ where: { donorId: organ.donorId, id: { not: organ.id }, status: { notIn: [OrganStatus.COMPLETED, OrganStatus.CANCELLED, OrganStatus.EXPIRED, OrganStatus.DISCARDED, OrganStatus.UNAVAILABLE] } } });
+			if (!otherActiveOrgans) await tx.organDonor.updateMany({ where: { id: organ.donorId, status: { in: ["REGISTERED", "ACTIVE"] } }, data: { status: "CLOSED" } });
+		}
 		const acceptedOffer = await tx.organOffer.findFirst({ where: { organId, status: OrganOfferStatus.ACCEPTED }, select: { recipientId: true } });
 		if (acceptedOffer && (toStatus === OrganStatus.TRANSPLANTED || toStatus === OrganStatus.COMPLETED)) await tx.organRecipient.updateMany({ where: { id: acceptedOffer.recipientId, status: OrganRecipientStatus.MATCHED }, data: { status: OrganRecipientStatus.CLOSED } });
 		if (acceptedOffer && (toStatus === OrganStatus.CANCELLED || toStatus === OrganStatus.UNAVAILABLE)) await tx.organRecipient.updateMany({ where: { id: acceptedOffer.recipientId, status: OrganRecipientStatus.MATCHED }, data: { status: OrganRecipientStatus.ACTIVE } });
@@ -96,30 +102,48 @@ export async function getOrganDashboardMetrics(actor: AuthContext) {
 	const procurementWhere = institutionId ? { procurementCentreId: institutionId } : {};
 	const donorWhere = institutionId ? { institutionId } : undefined;
 	const recipientWhere = institutionId ? { institutionId, status: "ACTIVE" as const } : { status: "ACTIVE" as const };
-	const [total, statusCounts, activeOffers, procurements, preserving, pendingDonorReview, pendingRecipientReview, activeRecipientRequirements] = await Promise.all([
+	const [total, statusCounts, activeOffers, acceptedOffers, procurements, procurementVolume, preserving, pendingDonorReview, pendingRecipientReview, activeRecipientRequirements, donorRequests, recipientRequests, rejectedDonors, rejectedRecipients, recentEvents, recentAudit] = await Promise.all([
 		database.organRecord.count({ where: organWhere }),
 		database.organRecord.groupBy({ by: ["status"], where: organWhere, _count: { _all: true } }),
 		database.organOffer.count({ where: { ...offerWhere, status: { in: ACTIVE_OFFER_STATUSES } } }),
+		database.organOffer.count({ where: { ...offerWhere, status: OrganOfferStatus.ACCEPTED } }),
 		database.organProcurement.count({ where: { ...procurementWhere, status: { in: [ProcurementStatus.SCHEDULED, ProcurementStatus.IN_PROGRESS] } } }),
+		database.organProcurement.count({ where: procurementWhere }),
 		database.organRecord.findMany({ where: { ...organWhere, status: OrganStatus.PRESERVING }, select: { id: true, organType: true, institutionId: true, preservationMethod: true, preservationStartTime: true } }),
 		database.organDonor.count({ where: { ...donorWhere, consentStatus: ConsentStatus.PENDING } }),
 		database.organRecipient.count({ where: { ...(institutionId ? { institutionId } : {}), status: OrganRecipientStatus.PENDING_REVIEW } }),
 		database.organRecipient.count({ where: recipientWhere }),
+		database.organDonor.count({ where: donorWhere }),
+		database.organRecipient.count({ where: institutionId ? { institutionId } : {} }),
+		database.organDonor.count({ where: { ...donorWhere, authorizationStatus: OrganAuthorizationStatus.REJECTED } }),
+		database.organRecipient.count({ where: { ...(institutionId ? { institutionId } : {}), status: OrganRecipientStatus.REJECTED } }),
+		database.organWorkflowEvent.findMany({ where: institutionId ? { institutionId } : {}, include: { organ: { select: { reference: true, organType: true } } }, orderBy: { createdAt: "desc" }, take: 5 }),
+		database.auditLog.findMany({ where: institutionId ? { actorInstitutionId: institutionId, entityType: { in: ["OrganDonor", "OrganRecipient", "OrganRecord", "OrganConsent", "OrganMatch", "OrganOffer", "OrganProcurement"] } } : { entityType: { in: ["OrganDonor", "OrganRecipient", "OrganRecord", "OrganConsent", "OrganMatch", "OrganOffer", "OrganProcurement"] } }, orderBy: { createdAt: "desc" }, take: 5 }),
 	]);
 	const counts = Object.fromEntries(statusCounts.map(({ status, _count }) => [status, _count._all])) as Record<string, number>;
 	const preservedWithTimers = await attachPreservationClocks(preserving.filter((row): row is typeof row & { preservationMethod: PreservationMethod } => Boolean(row.preservationMethod)));
+	const recentActivity = [...recentEvents.map((event) => ({ id: event.id, action: event.eventType, createdAt: event.createdAt, reference: event.organ?.reference ?? null, organType: event.organ?.organType ?? null, actorId: event.actorId })), ...recentAudit.map((event) => ({ id: event.id, action: event.action, createdAt: event.createdAt, reference: typeof event.metadata === "object" && event.metadata !== null && "reference" in event.metadata ? String(event.metadata.reference) : null, organType: null, actorId: event.actorId }))].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime()).slice(0, 5);
 	return {
 		total,
+		donorRequests,
+		recipientRequests,
+		activeWorkflows: (counts[OrganStatus.COMPLETED] ?? 0) + (counts[OrganStatus.CANCELLED] ?? 0) + (counts[OrganStatus.EXPIRED] ?? 0) + (counts[OrganStatus.UNAVAILABLE] ?? 0) < total ? total - ((counts[OrganStatus.COMPLETED] ?? 0) + (counts[OrganStatus.CANCELLED] ?? 0) + (counts[OrganStatus.EXPIRED] ?? 0) + (counts[OrganStatus.UNAVAILABLE] ?? 0)) : 0,
 		available: counts[OrganStatus.AVAILABLE] ?? 0,
 		matching: counts[OrganStatus.MATCHING] ?? 0,
 		activeOffers,
+		acceptedOffers,
 		pendingDonorReview,
 		pendingRecipientReview,
 		activeRecipientRequirements,
 		procurements,
+		procurementVolume,
 		preserving: counts[OrganStatus.PRESERVING] ?? 0,
 		criticalPreservation: preservedWithTimers.filter((row) => row.preservation.status === PreservationStatus.CRITICAL || row.preservation.status === PreservationStatus.EXPIRED).length,
 		completed: (counts[OrganStatus.COMPLETED] ?? 0) + (counts[OrganStatus.TRANSPLANTED] ?? 0),
+		rejected: rejectedDonors + rejectedRecipients + (counts[OrganStatus.DISCARDED] ?? 0),
+		cancelled: counts[OrganStatus.CANCELLED] ?? 0,
+		expired: counts[OrganStatus.EXPIRED] ?? 0,
+		recentActivity,
 	};
 }
 async function attachPreservationClocks<T extends { id: string; organType: OrganType; institutionId: string; preservationMethod: PreservationMethod | null; preservationStartTime: Date | null }>(records: T[]) {

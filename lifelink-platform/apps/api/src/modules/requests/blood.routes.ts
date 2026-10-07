@@ -235,12 +235,13 @@ export function assertMayCoordinate(
   record: NonNullable<Awaited<ReturnType<typeof findRequestById>>>,
   actor: AuthContext,
 ) {
+  const creatorInstitutionId = record.createdByInstitutionId ?? ("createdBy" in record ? (record as typeof record & { createdBy?: { institutionId?: string | null } | null }).createdBy?.institutionId : undefined);
   if (
     actor.role === "ADMINISTRATOR" ||
     record.createdById === actor.userId ||
     (actor.role === "HOSPITAL_USER" &&
       !!actor.institutionId &&
-      record.createdByInstitutionId === actor.institutionId)
+      creatorInstitutionId === actor.institutionId)
   ) {
     return;
   }
@@ -251,13 +252,14 @@ export function mayReadRequest(
   record: NonNullable<Awaited<ReturnType<typeof findRequestById>>>,
   actor: AuthContext,
 ) {
+  const creatorInstitutionId = record.createdByInstitutionId ?? ("createdBy" in record ? (record as typeof record & { createdBy?: { institutionId?: string | null } | null }).createdBy?.institutionId : undefined);
   return (
     actor.role === "ADMINISTRATOR" ||
     record.createdById === actor.userId ||
     record.recipients.some((recipient) => recipient.userId === actor.userId) ||
     ((actor.role === "HOSPITAL_USER" || actor.role === "BLOOD_BANK_USER") &&
       !!actor.institutionId &&
-      (record.createdByInstitutionId === actor.institutionId ||
+      (creatorInstitutionId === actor.institutionId ||
         record.matches.some(
           (match) => match.providerInstitutionId === actor.institutionId,
         )))

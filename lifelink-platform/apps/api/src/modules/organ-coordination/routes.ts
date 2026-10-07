@@ -5,13 +5,13 @@ import { ApiError } from "../../middleware/api-error";
 import { authenticateRequest } from "../../middleware/auth";
 import { authorizeAction } from "../../middleware/rbac";
 import {
-	organDonorUpdateSchema, organRecordSchema, organRecordUpdateSchema, organStatusSchema, organAuthorizationSchema, organConsentRecordSchema, recipientRequirementUpdateSchema, organRecipientReviewSchema, organRecipientListQuerySchema,
+	organDonorUpdateSchema, organRecordSchema, organRecordUpdateSchema, organStatusSchema, organAuthorizationSchema, recipientRequirementUpdateSchema, organRecipientReviewSchema, organRecipientListQuerySchema,
 	organMatchingSchema, organListQuerySchema, organDonorListQuerySchema, organMatchReviewSchema, organOfferSchema, organOfferResponseSchema, organOfferStatusSchema,
 	organProcurementSchema, procurementStatusSchema, preservationStartSchema,
 	preservationPolicySchema, preservationPolicyLookupSchema, personalOrganDonorSchema, personalOrganRecipientSchema, personalOrganRecipientUpdateSchema, validateRequest, validateUuidParams,
 } from "../../middleware/validation";
 import {
-	updateOrganDonor, recordDonorConsent, verifyDonorConsent, withdrawDonorConsent, authorizeOrganDonor, createOrganRecord, updateOrganRecord, transitionOrgan, listOrgans, getOrganDashboardMetrics,
+	updateOrganDonor, verifyDonorConsent, authorizeOrganDonor, createOrganRecord, updateOrganRecord, transitionOrgan, listOrgans, getOrganDashboardMetrics,
 	listOrganDonors, generateOrganMatches, startOrganPreservation, getOrganPreservation,
 	listOrganRecipients, updateOrganRecipient, reviewOrganRecipient, reviewOrganMatch, getOrganMatch, createOrganOffer, listOrganOffers, updateOrganOfferStatus,
 	respondToOrganOffer, createOrganProcurement, updateOrganProcurement, getOrganPreservationPolicy,
@@ -29,14 +29,19 @@ export function registerOrganCoordinationRoutes(router = Router()) {
 	startPreservationAlertWorker();
 	router.use(authenticateRequest());
 	// Personal users can manage their own donor interest and recipient requirement.
-	router.get("/me/organ-services", asyncRoute(async (_req, res) => res.json({ institutions: await listOrganServiceInstitutions() })));
-	router.get("/me/donor", authorizeAction("USER"), asyncRoute(async (req, res) => res.json({ donor: await getMyOrganDonor(req.auth!) })));
-	router.post("/me/donor", authorizeAction("USER"), validateRequest(personalOrganDonorSchema), asyncRoute(async (req, res) => res.status(201).json({ donor: await createMyOrganDonor(req.auth!, req.body) })));
-	router.post("/me/donor/withdraw", authorizeAction("USER"), asyncRoute(async (req, res) => res.json(await withdrawMyOrganDonorConsent(req.auth!))));
-	router.get("/me/recipients", authorizeAction("USER"), asyncRoute(async (req, res) => res.json({ recipients: await listMyOrganRecipients(req.auth!) })));
-	router.post("/me/recipients", authorizeAction("USER"), validateRequest(personalOrganRecipientSchema), asyncRoute(async (req, res) => res.status(201).json({ recipient: await createMyOrganRecipient(req.auth!, req.body) })));
-	router.patch("/me/recipients/:recipientId", authorizeAction("USER"), validateUuidParams("recipientId"), validateRequest(personalOrganRecipientUpdateSchema), asyncRoute(async (req, res) => res.json({ recipient: await updateMyOrganRecipient(req.auth!, String(req.params.recipientId), req.body) })));
-	router.post("/me/recipients/:recipientId/cancel", authorizeAction("USER"), validateUuidParams("recipientId"), asyncRoute(async (req, res) => res.json(await cancelMyOrganRecipient(req.auth!, String(req.params.recipientId)))));
+	router.get("/me/organ-services", asyncRoute(async (req, res) => {
+		const latitude = req.query.latitude === undefined ? undefined : Number(req.query.latitude);
+		const longitude = req.query.longitude === undefined ? undefined : Number(req.query.longitude);
+		if ((latitude === undefined) !== (longitude === undefined) || latitude !== undefined && (!Number.isFinite(latitude) || Math.abs(latitude) > 90) || longitude !== undefined && (!Number.isFinite(longitude) || Math.abs(longitude) > 180)) throw new ApiError(400, "INVALID_LOCATION", "Provide valid latitude and longitude together.");
+		res.json({ institutions: await listOrganServiceInstitutions(latitude, longitude) });
+	}));
+	router.get("/me/donor", authorizeAction("USER", "ADMINISTRATOR"), asyncRoute(async (req, res) => res.json({ donors: await getMyOrganDonor(req.auth!) })));
+	router.post("/me/donor", authorizeAction("USER", "ADMINISTRATOR"), validateRequest(personalOrganDonorSchema), asyncRoute(async (req, res) => res.status(201).json({ donors: await createMyOrganDonor(req.auth!, req.body) })));
+	router.post("/me/donor/:donorId/withdraw", authorizeAction("USER", "ADMINISTRATOR"), validateUuidParams("donorId"), asyncRoute(async (req, res) => res.json(await withdrawMyOrganDonorConsent(req.auth!, String(req.params.donorId)))));
+	router.get("/me/recipients", authorizeAction("USER", "ADMINISTRATOR"), asyncRoute(async (req, res) => res.json({ recipients: await listMyOrganRecipients(req.auth!) })));
+	router.post("/me/recipients", authorizeAction("USER", "ADMINISTRATOR"), validateRequest(personalOrganRecipientSchema), asyncRoute(async (req, res) => res.status(201).json({ recipient: await createMyOrganRecipient(req.auth!, req.body) })));
+	router.patch("/me/recipients/:recipientId", authorizeAction("USER", "ADMINISTRATOR"), validateUuidParams("recipientId"), validateRequest(personalOrganRecipientUpdateSchema), asyncRoute(async (req, res) => res.json({ recipient: await updateMyOrganRecipient(req.auth!, String(req.params.recipientId), req.body) })));
+	router.post("/me/recipients/:recipientId/cancel", authorizeAction("USER", "ADMINISTRATOR"), validateUuidParams("recipientId"), asyncRoute(async (req, res) => res.json(await cancelMyOrganRecipient(req.auth!, String(req.params.recipientId)))));
 	router.get("/donors", authorizeAction(...coordinators), asyncRoute(async (req, res) => {
 		const query = organDonorListQuerySchema.safeParse(req.query);
 		if (!query.success) throw new ApiError(400, "VALIDATION_FAILED", "Donor filters are invalid.");
@@ -44,9 +49,7 @@ export function registerOrganCoordinationRoutes(router = Router()) {
 	}));
 	router.get("/donors/:donorId", authorizeAction(...coordinators), validateUuidParams("donorId"), asyncRoute(async (req, res) => res.json(await getOrganDonor(req.auth!, String(req.params.donorId)))));
 	router.patch("/donors/:donorId", authorizeAction(...coordinators), validateUuidParams("donorId"), validateRequest(organDonorUpdateSchema), asyncRoute(async (req, res) => res.json(await updateOrganDonor(req.auth!, String(req.params.donorId), req.body))));
-	router.post("/donors/:donorId/consent/record", authorizeAction(...coordinators), validateUuidParams("donorId"), validateRequest(organConsentRecordSchema), asyncRoute(async (req, res) => res.json(await recordDonorConsent(req.auth!, String(req.params.donorId), req.body.documentReference))));
 	router.post("/donors/:donorId/consent/verify", authorizeAction(...coordinators), validateUuidParams("donorId"), asyncRoute(async (req, res) => res.json(await verifyDonorConsent(req.auth!, String(req.params.donorId)))));
-	router.post("/donors/:donorId/consent/withdraw", authorizeAction(...coordinators), validateUuidParams("donorId"), asyncRoute(async (req, res) => res.json(await withdrawDonorConsent(req.auth!, String(req.params.donorId)))));
 	router.post("/donors/:donorId/authorization", authorizeAction(...coordinators), validateUuidParams("donorId"), validateRequest(organAuthorizationSchema), asyncRoute(async (req, res) => res.json(await authorizeOrganDonor(req.auth!, String(req.params.donorId), req.body.status))));
 	router.get("/recipients", authorizeAction(...coordinators), asyncRoute(async (req, res) => { const query = organRecipientListQuerySchema.safeParse(req.query); if (!query.success) throw new ApiError(400, "VALIDATION_FAILED", "Recipient filters are invalid."); res.json({ recipients: await listOrganRecipients(req.auth!, query.data) }); }));
 	router.get("/recipients/:recipientId", authorizeAction(...coordinators), validateUuidParams("recipientId"), asyncRoute(async (req, res) => res.json(await getOrganRecipient(req.auth!, String(req.params.recipientId)))));
