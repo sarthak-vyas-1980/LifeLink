@@ -20,8 +20,8 @@ export function findInstitutionAccessState(id: string) {
 }
 
 export function findInstitutionAccountByEmail(email: string) {
-  return database.institutionAccount.findUnique({
-    where: { email },
+  return database.institutionAccount.findFirst({
+    where: { email: { equals: email, mode: "insensitive" } },
     include: {
       institution: {
         include: {

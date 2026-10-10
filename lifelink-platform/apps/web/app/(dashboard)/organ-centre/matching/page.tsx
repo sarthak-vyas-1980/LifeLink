@@ -1,2 +1,2 @@
-import { OrganResourcePage } from "../../../../components/organ";
-export default function MatchingPage() { return <OrganResourcePage resource="organs" matching/>; }
+import { OrganMatchResourcePage } from "../../../../components/organ/matching-page";
+export default function MatchingPage() { return <OrganMatchResourcePage/>; }

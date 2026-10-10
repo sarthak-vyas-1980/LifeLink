@@ -23,8 +23,8 @@ import { calculateDistance } from "../maps/geospatial.service";
 import { requireInstitution } from '../organ-coordination/shared';
 
 export async function listOrganAudit(actor: AuthContext, organId: string) {
-	const organ = await database.organRecord.findUnique({ where: { id: organId }, select: { id: true, institutionId: true, destinationCentreId: true } });
-	if (!organ || actor.role !== "ADMINISTRATOR" && actor.institutionId !== organ.institutionId && actor.institutionId !== organ.destinationCentreId) throw new ApiError(404, "ORGAN_NOT_FOUND", "Organ record not found.");
+	const organ = await database.organRecord.findUnique({ where: { id: organId }, select: { id: true, institutionId: true } });
+	if (!organ || actor.role !== "ADMINISTRATOR" && actor.institutionId !== organ.institutionId) throw new ApiError(404, "ORGAN_NOT_FOUND", "Organ record not found.");
 	const [events, donor, matches, offers, procurements] = await Promise.all([
 		database.organWorkflowEvent.findMany({ where: { organId }, orderBy: { createdAt: "desc" }, take: 100 }),
 		database.organDonor.findFirst({ where: { organs: { some: { id: organId } } }, select: { id: true } }),
@@ -38,9 +38,9 @@ export async function listOrganAudit(actor: AuthContext, organId: string) {
 }
 export async function listAllOrganAudit(actor: AuthContext) {
 	const institutionId = actor.role === "ADMINISTRATOR" ? undefined : requireInstitution(actor);
-	const where = institutionId ? { OR: [{ institutionId }, { organ: { institutionId } }, { organ: { destinationCentreId: institutionId } }] } : undefined;
+	const where = institutionId ? { OR: [{ institutionId }, { organ: { institutionId } }] } : undefined;
 	const events = await database.organWorkflowEvent.findMany({ where, include: { organ: { select: { reference: true, organType: true } } }, orderBy: { createdAt: "desc" }, take: 200 });
-	const visibleOrgans = institutionId ? await database.organRecord.findMany({ where: { OR: [{ institutionId }, { destinationCentreId: institutionId }] }, select: { id: true, reference: true, organType: true } }) : [];
+	const visibleOrgans = institutionId ? await database.organRecord.findMany({ where: { institutionId }, select: { id: true, reference: true, organType: true } }) : [];
 	const visibleDonors = institutionId ? await database.organDonor.findMany({ where: { institutionId }, select: { id: true } }) : [];
 	const visibleRecipients = institutionId ? await database.organRecipient.findMany({ where: { institutionId }, select: { id: true } }) : [];
 	const visibleOrganIds = visibleOrgans.map(({ id }) => id);
@@ -54,7 +54,7 @@ export async function listAllOrganAudit(actor: AuthContext) {
 	const [relatedMatches, relatedOffers, relatedProcurements] = related;
 	for (const row of [...relatedMatches, ...relatedOffers, ...relatedProcurements]) { const organ = visibleOrgans.find((item) => item.id === row.organId); if (organ) entityToOrgan.set(row.id, organ); }
 	for (const donor of visibleDonors) {
-		const organ = await database.organRecord.findFirst({ where: { donorId: donor.id, OR: [{ institutionId }, { destinationCentreId: institutionId }] }, select: { id: true, reference: true, organType: true } });
+		const organ = await database.organRecord.findFirst({ where: { donorId: donor.id, institutionId }, select: { id: true, reference: true, organType: true } });
 		if (organ) entityToOrgan.set(donor.id, organ);
 	}
 	const auditWhere = institutionId ? { entityId: { in: [...entityToOrgan.keys()] } } : { entityType: { in: ["OrganDonor", "OrganConsent", "OrganRecord", "OrganRecipient", "OrganMatch", "OrganOffer", "OrganProcurement", "OrganPreservationPolicy"] } };

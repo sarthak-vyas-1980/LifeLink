@@ -43,7 +43,7 @@ export const registrationSchema = z.object({
 
 export const loginSchema = z.object({
   email: z.string().email().max(254),
-  phone: phoneNumberSchema.optional(),
+  phone: z.preprocess((value) => typeof value === "string" && value.trim() === "" ? undefined : value, phoneNumberSchema.optional()),
   password: z.string().min(1).max(128),
   accountType: z.enum(["USER", "INSTITUTION"]),
 });
@@ -164,7 +164,7 @@ export const organRecordUpdateSchema = z.object({ bloodGroup: z.enum(bloodGroupV
 
 export const organStatusSchema = z.object({ status: z.enum(["REGISTERED", "ASSESSMENT_PENDING", "ELIGIBLE_FOR_COORDINATION", "AVAILABLE", "MATCHING", "OFFERED", "ACCEPTED", "RETRIEVAL_SCHEDULED", "RETRIEVAL_IN_PROGRESS", "RETRIEVED", "PRESERVING", "FINAL_ASSESSMENT", "ALLOCATED", "TRANSPLANTED", "COMPLETED", "UNAVAILABLE", "EXPIRED", "DISCARDED", "CANCELLED"]) });
 export const organListQuerySchema = z.object({ q: z.string().trim().max(100).optional(), status: z.enum(["REGISTERED", "ASSESSMENT_PENDING", "ELIGIBLE_FOR_COORDINATION", "AVAILABLE", "MATCHING", "OFFERED", "ACCEPTED", "RETRIEVAL_SCHEDULED", "RETRIEVAL_IN_PROGRESS", "RETRIEVED", "PRESERVING", "FINAL_ASSESSMENT", "ALLOCATED", "TRANSPLANTED", "COMPLETED", "UNAVAILABLE", "EXPIRED", "DISCARDED", "CANCELLED"]).optional(), organType: z.enum(organTypes).optional(), bloodGroup: z.enum(bloodGroupValues).optional(), institutionId: z.string().uuid().optional(), preservationStatus: z.enum(["NOT_STARTED", "NORMAL", "WARNING", "CRITICAL", "EXPIRED"]).optional(), createdFrom: z.coerce.date().optional(), createdTo: z.coerce.date().optional(), page: z.coerce.number().int().min(1).default(1), pageSize: z.coerce.number().int().min(1).max(100).default(25) }).refine((query) => !query.createdFrom || !query.createdTo || query.createdFrom <= query.createdTo, { message: "createdFrom must be before createdTo" });
-export const organDonorListQuerySchema = z.object({ q: z.string().trim().max(100).optional(), status: z.enum(["REGISTERED", "ACTIVE", "CLOSED"]).optional(), consentStatus: z.enum(["PENDING", "ACCEPTED", "DECLINED", "RECORDED", "VERIFIED", "REJECTED", "WITHDRAWN", "EXPIRED"]).optional(), stage: z.enum(["REVIEW", "MATCHING", "OFFER", "PROCUREMENT", "COMPLETED", "REJECTED", "CANCELLED", "EXPIRED"]).optional() });
+export const organDonorListQuerySchema = z.object({ q: z.string().trim().max(100).optional(), status: z.enum(["REGISTERED", "ACTIVE", "FULFILLED", "CLOSED"]).optional(), consentStatus: z.enum(["PENDING", "ACCEPTED", "DECLINED", "RECORDED", "VERIFIED", "REJECTED", "WITHDRAWN", "EXPIRED"]).optional(), stage: z.enum(["REVIEW", "DONOR_AUTHORIZATION", "ORGAN_REGISTRATION", "ORGAN_ASSESSMENT", "DONOR_RETRIEVAL_PENDING", "MATCHING", "OFFER", "PROCUREMENT", "COMPLETED", "REJECTED", "CANCELLED", "EXPIRED"]).optional() });
 
 export const recipientRequirementSchema = z.object({
 	organType: z.enum(organTypes),
@@ -189,11 +189,13 @@ export const personalOrganRecipientSchema = z.object({ institutionId: z.string()
 export const personalOrganRecipientUpdateSchema = z.object({ organType: z.enum(organTypes).optional(), bloodGroup: z.enum(bloodGroupValues).nullable().optional(), priority: z.enum(priorityValues).optional(), urgency: z.string().trim().max(80).nullable().optional(), requiredBy: z.coerce.date().nullable().optional() }).refine((value) => Object.keys(value).length > 0, "Provide at least one requirement field to update.");
 
 export const organMatchingSchema = z.object({ radiusKm: z.number().positive().max(5000).optional() });
+export const organMatchListQuerySchema = z.object({ q: z.string().trim().max(100).optional(), status: z.enum(["GENERATED", "UNDER_REVIEW", "SHORTLISTED", "CONVERTED_TO_OFFER", "REJECTED", "EXPIRED", "CANCELLED"]).optional(), organType: z.enum(organTypes).optional(), bloodGroup: z.enum(bloodGroupValues).optional() });
 export const organMatchReviewSchema = z.object({ status: z.enum(["UNDER_REVIEW", "SHORTLISTED", "REJECTED"]) });
 export const organOfferSchema = z.object({ matchId: z.string().uuid(), responseDeadline: z.coerce.date(), responseReason: z.string().trim().max(500).optional() });
 export const organOfferResponseSchema = z.object({ action: z.enum(["ACCEPT", "REJECT"]), responseReason: z.string().trim().max(500).optional() });
 export const organOfferStatusSchema = z.object({ status: z.enum(["UNDER_REVIEW", "CANCELLED"]) });
 export const organProcurementSchema = z.object({ organId: z.string().uuid(), scheduledAt: z.coerce.date(), responsibleReference: z.string().trim().max(120).optional(), notes: z.string().trim().max(1000).optional() });
+export const organTransplantScheduleSchema = z.object({ scheduledAt: z.coerce.date(), responsibleReference: z.string().trim().max(120).optional() });
 export const procurementStatusSchema = z.object({ status: z.enum(["IN_PROGRESS", "COMPLETED", "CANCELLED", "FAILED"]) });
 export const preservationStartSchema = z.object({ method: z.enum(preservationMethods), solution: z.string().trim().max(120).optional() });
 export const preservationPolicySchema = z.object({ institutionId: z.string().uuid().optional(), organType: z.enum(organTypes), method: z.enum(preservationMethods), targetHours: z.number().positive().max(1000), warningHours: z.number().positive().max(1000), criticalHours: z.number().positive().max(1000), maximumHours: z.number().positive().max(1000), label: z.string().trim().min(4).max(100).default("DEMO / CONFIGURABLE - NOT A CLINICAL RULE").refine((label) => label.toUpperCase().includes("NOT A CLINICAL RULE"), "Keep the policy disclaimer in its label.") }).superRefine((value, context) => {

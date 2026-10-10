@@ -81,7 +81,7 @@ export async function withdrawDonorConsent(actor: AuthContext, donorId: string) 
 		return updated;
 	});
 }
-export type OrganWorkflowStage = "REVIEW" | "MATCHING" | "OFFER" | "PROCUREMENT" | "COMPLETED" | "REJECTED" | "CANCELLED" | "EXPIRED";
+export type OrganWorkflowStage = "REVIEW" | "DONOR_AUTHORIZATION" | "ORGAN_REGISTRATION" | "ORGAN_ASSESSMENT" | "DONOR_RETRIEVAL_PENDING" | "MATCHING" | "OFFER" | "PROCUREMENT" | "COMPLETED" | "REJECTED" | "CANCELLED" | "EXPIRED";
 export async function listOrganDonors(actor: AuthContext, filters: { q?: string; status?: string; consentStatus?: ConsentStatus; stage?: OrganWorkflowStage } = {}) {
 	const institutionId = actor.role === "ADMINISTRATOR" ? undefined : requireInstitution(actor);
 	const clauses: Prisma.OrganDonorWhereInput[] = [institutionId ? { institutionId } : {}];
@@ -90,10 +90,14 @@ export async function listOrganDonors(actor: AuthContext, filters: { q?: string;
 	if (filters.stage) {
 		const stageWhere: Record<OrganWorkflowStage, Prisma.OrganDonorWhereInput> = {
 			REVIEW: { status: OrganDonorStatus.REGISTERED },
-			MATCHING: { organs: { some: { status: { in: [OrganStatus.ELIGIBLE_FOR_COORDINATION, OrganStatus.AVAILABLE, OrganStatus.MATCHING] } } } },
+			DONOR_AUTHORIZATION: { consentStatus: ConsentStatus.VERIFIED, authorizationStatus: OrganAuthorizationStatus.PENDING },
+			ORGAN_REGISTRATION: { authorizationStatus: OrganAuthorizationStatus.AUTHORIZED, organs: { none: {} } },
+			ORGAN_ASSESSMENT: { organs: { some: { status: { in: [OrganStatus.REGISTERED, OrganStatus.ASSESSMENT_PENDING] } } } },
+			DONOR_RETRIEVAL_PENDING: { donorType: "POSTHUMOUS_INTENT", organs: { some: { status: { in: [OrganStatus.ELIGIBLE_FOR_COORDINATION, OrganStatus.AVAILABLE, OrganStatus.MATCHING, OrganStatus.RETRIEVED, OrganStatus.PRESERVING, OrganStatus.FINAL_ASSESSMENT, OrganStatus.ALLOCATED] }, procurements: { none: { status: ProcurementStatus.COMPLETED } } } } },
+			MATCHING: { OR: [{ donorType: { not: "POSTHUMOUS_INTENT" }, organs: { some: { status: { in: [OrganStatus.ELIGIBLE_FOR_COORDINATION, OrganStatus.AVAILABLE, OrganStatus.MATCHING] } } } }, { donorType: "POSTHUMOUS_INTENT", organs: { some: { status: { in: [OrganStatus.PRESERVING, OrganStatus.FINAL_ASSESSMENT, OrganStatus.ALLOCATED] }, procurements: { some: { status: ProcurementStatus.COMPLETED } } } } }] },
 			OFFER: { organs: { some: { OR: [{ status: { in: [OrganStatus.OFFERED, OrganStatus.ACCEPTED] } }, { offers: { some: { status: { in: [OrganOfferStatus.SENT, OrganOfferStatus.UNDER_REVIEW, OrganOfferStatus.ACCEPTED] } } } }] } } },
 			PROCUREMENT: { organs: { some: { OR: [{ status: { in: [OrganStatus.RETRIEVAL_SCHEDULED, OrganStatus.RETRIEVAL_IN_PROGRESS, OrganStatus.RETRIEVED, OrganStatus.PRESERVING, OrganStatus.FINAL_ASSESSMENT, OrganStatus.ALLOCATED] } }, { procurements: { some: { status: { in: [ProcurementStatus.SCHEDULED, ProcurementStatus.IN_PROGRESS, ProcurementStatus.COMPLETED] } } } }] } } },
-			COMPLETED: { OR: [{ status: OrganDonorStatus.CLOSED }, { organs: { some: { status: { in: [OrganStatus.TRANSPLANTED, OrganStatus.COMPLETED] } } } }] },
+			COMPLETED: { OR: [{ status: OrganDonorStatus.FULFILLED }, { organs: { some: { status: { in: [OrganStatus.TRANSPLANTED, OrganStatus.COMPLETED] } } } }] },
 			REJECTED: { authorizationStatus: OrganAuthorizationStatus.REJECTED },
 			CANCELLED: { OR: [{ authorizationStatus: OrganAuthorizationStatus.WITHDRAWN }, { consentStatus: ConsentStatus.WITHDRAWN }, { organs: { some: { status: OrganStatus.CANCELLED } } }] },
 			EXPIRED: { OR: [{ consentStatus: ConsentStatus.EXPIRED }, { organs: { some: { status: OrganStatus.EXPIRED } } }] },
@@ -101,25 +105,31 @@ export async function listOrganDonors(actor: AuthContext, filters: { q?: string;
 		clauses.push(stageWhere[filters.stage]);
 	}
 	if (filters.q) clauses.push({ reference: { contains: filters.q, mode: "insensitive" as const } });
-	const donors = await database.organDonor.findMany({ where: { AND: clauses }, select: { id: true, reference: true, institutionId: true, donorType: true, organType: true, bloodGroup: true, consentStatus: true, authorizationStatus: true, status: true, createdAt: true, user: { select: { name: true, phone: true, email: true } }, institution: { select: { name: true } }, organs: { select: { status: true, matches: { select: { status: true } }, offers: { select: { status: true } }, procurements: { select: { status: true } } } } }, orderBy: { createdAt: "desc" }, take: 100 });
+	const donors = await database.organDonor.findMany({ where: { AND: clauses }, select: { id: true, reference: true, institutionId: true, donorType: true, organType: true, bloodGroup: true, consentStatus: true, authorizationStatus: true, status: true, createdAt: true, updatedAt: true, user: { select: { name: true, phone: true, email: true } }, institution: { select: { name: true } }, organs: { select: { status: true, matches: { select: { status: true } }, offers: { select: { status: true } }, procurements: { select: { status: true } } } } }, orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }], take: 100 });
 	return donors.map(({ user, organs, ...donor }) => ({ ...donor, workflowStage: donorWorkflowStage({ ...donor, organs }), contactName: user?.name ?? null, contactPhone: user?.phone ?? null, contactEmail: user?.email ?? null }));
 }
 
-function donorWorkflowStage(donor: { consentStatus: ConsentStatus; authorizationStatus: OrganAuthorizationStatus; status: OrganDonorStatus; organs: Array<{ status: OrganStatus; matches: Array<{ status: OrganMatchStatus }>; offers: Array<{ status: OrganOfferStatus }>; procurements: Array<{ status: ProcurementStatus }> }> }) {
+function donorWorkflowStage(donor: { donorType: string; consentStatus: ConsentStatus; authorizationStatus: OrganAuthorizationStatus; status: OrganDonorStatus; organs: Array<{ status: OrganStatus; matches: Array<{ status: OrganMatchStatus }>; offers: Array<{ status: OrganOfferStatus }>; procurements: Array<{ status: ProcurementStatus }> }> }) {
 	const organ = donor.organs[0];
 	const is = (values: readonly string[], value: string | undefined) => value !== undefined && values.includes(value);
+	const posthumous = donor.donorType === "POSTHUMOUS_INTENT";
+	const retrievalCompleted = organ?.procurements.some((item) => item.status === ProcurementStatus.COMPLETED) ?? false;
+	if (donor.status === OrganDonorStatus.FULFILLED) return "FULFILLED";
+	if (posthumous && retrievalCompleted) return "FULFILLED";
 	if (is([OrganStatus.COMPLETED, OrganStatus.TRANSPLANTED], organ?.status)) return "FULFILLED";
 	if (organ?.status === OrganStatus.EXPIRED || donor.consentStatus === ConsentStatus.EXPIRED) return "EXPIRED";
-	if (is([OrganStatus.UNAVAILABLE, OrganStatus.DISCARDED], organ?.status) || donor.authorizationStatus === OrganAuthorizationStatus.REJECTED) return "UNAVAILABLE";
-	if (donor.consentStatus === ConsentStatus.REJECTED || donor.consentStatus === ConsentStatus.DECLINED) return "REJECTED";
+	if (is([OrganStatus.UNAVAILABLE, OrganStatus.DISCARDED], organ?.status)) return "UNAVAILABLE";
+	if (donor.authorizationStatus === OrganAuthorizationStatus.REJECTED || donor.consentStatus === ConsentStatus.REJECTED || donor.consentStatus === ConsentStatus.DECLINED) return "REJECTED";
 	if (donor.status === OrganDonorStatus.CLOSED || donor.consentStatus === ConsentStatus.WITHDRAWN || donor.authorizationStatus === OrganAuthorizationStatus.WITHDRAWN) return "CANCELLED";
-	if (organ?.procurements.some((item) => item.status === ProcurementStatus.COMPLETED) || is([OrganStatus.RETRIEVED, OrganStatus.PRESERVING, OrganStatus.FINAL_ASSESSMENT, OrganStatus.ALLOCATED], organ?.status)) return "PROCUREMENT_COMPLETED";
-	if (organ?.procurements.some((item) => item.status === ProcurementStatus.IN_PROGRESS) || is([OrganStatus.RETRIEVAL_SCHEDULED, OrganStatus.RETRIEVAL_IN_PROGRESS], organ?.status)) return "PROCUREMENT_IN_PROGRESS";
-	if (organ?.offers.some((item) => item.status === OrganOfferStatus.ACCEPTED)) return "OFFER_ACCEPTED";
-	if (organ?.offers.some((item) => item.status === OrganOfferStatus.UNDER_REVIEW)) return "OFFER_EVALUATION";
-	if (organ?.offers.some((item) => item.status === OrganOfferStatus.SENT)) return "OFFER_SENT";
+	if (organ?.procurements.some((item) => [ProcurementStatus.SCHEDULED, ProcurementStatus.IN_PROGRESS].some((status) => status === item.status)) || is([OrganStatus.RETRIEVAL_SCHEDULED, OrganStatus.RETRIEVAL_IN_PROGRESS], organ?.status)) return "DONOR_PROCUREMENT";
+	if (posthumous && is([OrganStatus.ELIGIBLE_FOR_COORDINATION, OrganStatus.AVAILABLE, OrganStatus.MATCHING, OrganStatus.RETRIEVED, OrganStatus.PRESERVING, OrganStatus.FINAL_ASSESSMENT, OrganStatus.ALLOCATED], organ?.status)) return "DONOR_RETRIEVAL_PENDING";
+	if (is([OrganStatus.RETRIEVED, OrganStatus.PRESERVING, OrganStatus.FINAL_ASSESSMENT, OrganStatus.ALLOCATED], organ?.status)) return "DONOR_TRANSPLANT";
+	if (organ?.offers.some((item) => [OrganOfferStatus.ACCEPTED, OrganOfferStatus.UNDER_REVIEW, OrganOfferStatus.SENT].some((status) => status === item.status))) return "OFFER_COORDINATION";
 	if (organ?.matches.some((item) => [OrganMatchStatus.GENERATED, OrganMatchStatus.UNDER_REVIEW, OrganMatchStatus.SHORTLISTED, OrganMatchStatus.CONVERTED_TO_OFFER].some((status) => status === item.status))) return "POTENTIAL_MATCHES";
-	if (is([OrganStatus.ELIGIBLE_FOR_COORDINATION, OrganStatus.AVAILABLE, OrganStatus.MATCHING], organ?.status) || donor.authorizationStatus === OrganAuthorizationStatus.AUTHORIZED) return "MATCHING";
+	if (!organ && donor.authorizationStatus === OrganAuthorizationStatus.AUTHORIZED) return "ORGAN_REGISTRATION";
+	if (is([OrganStatus.REGISTERED, OrganStatus.ASSESSMENT_PENDING], organ?.status)) return "ORGAN_ASSESSMENT";
+	if (is([OrganStatus.ELIGIBLE_FOR_COORDINATION, OrganStatus.AVAILABLE, OrganStatus.MATCHING], organ?.status)) return "MATCHING";
+	if (donor.consentStatus === ConsentStatus.VERIFIED && donor.authorizationStatus === OrganAuthorizationStatus.PENDING) return "DONOR_AUTHORIZATION";
 	return "UNDER_REVIEW";
 }
 export async function getOrganDonor(actor: AuthContext, donorId: string) {

@@ -147,6 +147,7 @@ enum OrganStatus {
 enum OrganDonorStatus {
   REGISTERED
   ACTIVE
+  FULFILLED
   CLOSED
 }
 
@@ -697,6 +698,9 @@ model OrganRecord {
   currentLocationId       String?              @db.Uuid
   destinationCentreId     String?              @db.Uuid
   allocatedRecipientId    String?              @db.Uuid
+  transplantScheduledAt   DateTime?
+  transplantCompletedAt   DateTime?
+  transplantResponsibleReference String?
   qualityStatus           String?
   medicalAssessmentStatus String?
   notes                   String?
@@ -716,6 +720,7 @@ model OrganRecord {
   @@index([institutionId, status, createdAt])
   @@index([destinationCentreId, status])
   @@index([preservationStartTime])
+  @@index([transplantScheduledAt])
 }
 
 model OrganRecipient {

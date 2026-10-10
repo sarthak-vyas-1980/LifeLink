@@ -35,12 +35,13 @@ export async function listOrganRecipients(actor: AuthContext, filters: { q?: str
 		CANCELLED: { status: OrganRecipientStatus.CANCELLED },
 		EXPIRED: { offers: { some: { status: OrganOfferStatus.EXPIRED } } },
 	};
-	const recipients = await database.organRecipient.findMany({ where: { AND: [{ ...(institutionId ? { institutionId } : {}), ...(filters.status ? { status: filters.status } : {}), ...(filters.q ? { reference: { contains: filters.q, mode: "insensitive" } } : {}) }, ...(filters.stage ? [stageWhere[filters.stage]] : [])] }, select: { id: true, reference: true, institutionId: true, organType: true, bloodGroup: true, priority: true, status: true, registrationDate: true, user: { select: { name: true, phone: true, email: true } }, institution: { select: { name: true } }, requirement: true, matches: { select: { status: true } }, offers: { select: { status: true, organ: { select: { status: true, procurements: { select: { status: true } } } } } } }, orderBy: [{ status: "asc" }, { priority: "desc" }, { registrationDate: "asc" }], take: 100 });
+	const recipients = await database.organRecipient.findMany({ where: { AND: [{ ...(institutionId ? { institutionId } : {}), ...(filters.status ? { status: filters.status } : {}), ...(filters.q ? { reference: { contains: filters.q, mode: "insensitive" } } : {}) }, ...(filters.stage ? [stageWhere[filters.stage]] : [])] }, select: { id: true, reference: true, institutionId: true, organType: true, bloodGroup: true, priority: true, status: true, registrationDate: true, updatedAt: true, user: { select: { name: true, phone: true, email: true } }, institution: { select: { name: true } }, requirement: true, matches: { select: { status: true } }, offers: { select: { status: true, organ: { select: { id: true, status: true, procurements: { select: { status: true } } } } } } }, orderBy: [{ updatedAt: "desc" }, { registrationDate: "desc" }], take: 100 });
 	return recipients.map(({ user, matches, offers, ...recipient }) => ({ ...recipient, workflowStage: recipientWorkflowStage({ status: recipient.status, matches, offers }), contactName: user?.name ?? null, contactPhone: user?.phone ?? null, contactEmail: user?.email ?? null }));
 }
 
 function recipientWorkflowStage(recipient: { status: OrganRecipientStatus; matches: Array<{ status: OrganMatchStatus }>; offers: Array<{ status: OrganOfferStatus; organ: { status: OrganStatus; procurements: Array<{ status: ProcurementStatus }> } }> }) {
 	const is = (values: readonly string[], value: string | undefined) => value !== undefined && values.includes(value);
+	if (recipient.status === OrganRecipientStatus.PENDING_REVIEW) return "UNDER_REVIEW";
 	if (recipient.status === OrganRecipientStatus.REJECTED) return "REJECTED";
 	if (recipient.status === OrganRecipientStatus.CANCELLED) return "CANCELLED";
 	if (recipient.status === OrganRecipientStatus.CLOSED) return "FULFILLED";
@@ -48,16 +49,16 @@ function recipientWorkflowStage(recipient: { status: OrganRecipientStatus; match
 	if (acceptedOffer?.organ.status === OrganStatus.EXPIRED || recipient.offers.some((item) => item.status === OrganOfferStatus.EXPIRED)) return "EXPIRED";
 	if (acceptedOffer?.organ.status === OrganStatus.UNAVAILABLE) return "UNAVAILABLE";
 	if (is([OrganStatus.COMPLETED, OrganStatus.TRANSPLANTED], acceptedOffer?.organ.status)) return "FULFILLED";
-	if (acceptedOffer?.organ.procurements.some((item) => item.status === ProcurementStatus.COMPLETED) || is([OrganStatus.RETRIEVED, OrganStatus.PRESERVING, OrganStatus.FINAL_ASSESSMENT, OrganStatus.ALLOCATED], acceptedOffer?.organ.status)) return "PROCUREMENT_COMPLETED";
-	if (acceptedOffer?.organ.procurements.some((item) => item.status === ProcurementStatus.IN_PROGRESS) || is([OrganStatus.RETRIEVAL_SCHEDULED, OrganStatus.RETRIEVAL_IN_PROGRESS], acceptedOffer?.organ.status)) return "PROCUREMENT_IN_PROGRESS";
-	if (acceptedOffer) return "OFFER_ACCEPTED";
+	if (is([OrganStatus.RETRIEVED, OrganStatus.PRESERVING, OrganStatus.FINAL_ASSESSMENT, OrganStatus.ALLOCATED], acceptedOffer?.organ.status)) return "TRANSPLANT_COORDINATION";
+	if (acceptedOffer?.organ.procurements.some((item) => item.status === ProcurementStatus.COMPLETED)) return "TRANSPLANT_COORDINATION";
+	if (acceptedOffer) return "PROCUREMENT_IN_PROGRESS";
 	if (recipient.offers.some((item) => item.status === OrganOfferStatus.UNDER_REVIEW)) return "OFFER_EVALUATION";
 	if (recipient.offers.some((item) => item.status === OrganOfferStatus.SENT)) return "OFFER_SENT";
 	if (recipient.matches.some((item) => [OrganMatchStatus.GENERATED, OrganMatchStatus.UNDER_REVIEW, OrganMatchStatus.SHORTLISTED, OrganMatchStatus.CONVERTED_TO_OFFER].some((status) => status === item.status))) return "POTENTIAL_MATCHES";
 	return "MATCHING";
 }
 	export async function getOrganRecipient(actor: AuthContext, recipientId: string) {
-	const recipient = await database.organRecipient.findUnique({ where: { id: recipientId }, select: { id: true, reference: true, institutionId: true, organType: true, bloodGroup: true, priority: true, status: true, registrationDate: true, user: { select: { name: true, phone: true, email: true } }, institution: { select: { name: true } }, requirement: true, matches: { select: { id: true, status: true, coordinationScore: true, matchReasons: true, generatedAt: true, organ: { select: { reference: true, organType: true, status: true } } }, orderBy: { coordinationScore: "desc" } }, offers: { select: { id: true, reference: true, status: true, offeredAt: true, responseDeadline: true, organ: { select: { status: true, procurements: { select: { status: true } } } } } } } });
+	const recipient = await database.organRecipient.findUnique({ where: { id: recipientId }, select: { id: true, reference: true, institutionId: true, organType: true, bloodGroup: true, priority: true, status: true, registrationDate: true, user: { select: { name: true, phone: true, email: true } }, institution: { select: { name: true } }, requirement: true, matches: { select: { id: true, status: true, coordinationScore: true, matchReasons: true, generatedAt: true, organ: { select: { reference: true, organType: true, status: true } } }, orderBy: { coordinationScore: "desc" } }, offers: { select: { id: true, reference: true, status: true, offeredAt: true, responseDeadline: true, organ: { select: { id: true, status: true, procurements: { select: { status: true } } } } } } } });
 	if (!recipient || actor.role !== "ADMINISTRATOR" && actor.institutionId !== recipient.institutionId) throw new ApiError(404, "RECIPIENT_NOT_FOUND", "Recipient record not found.");
 	return { ...recipient, workflowStage: recipientWorkflowStage(recipient), contactName: recipient.user?.name ?? null, contactPhone: recipient.user?.phone ?? null, contactEmail: recipient.user?.email ?? null };
 }

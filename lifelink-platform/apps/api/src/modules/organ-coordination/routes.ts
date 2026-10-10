@@ -6,16 +6,16 @@ import { authenticateRequest } from "../../middleware/auth";
 import { authorizeAction } from "../../middleware/rbac";
 import {
 	organDonorUpdateSchema, organRecordSchema, organRecordUpdateSchema, organStatusSchema, organAuthorizationSchema, recipientRequirementUpdateSchema, organRecipientReviewSchema, organRecipientListQuerySchema,
-	organMatchingSchema, organListQuerySchema, organDonorListQuerySchema, organMatchReviewSchema, organOfferSchema, organOfferResponseSchema, organOfferStatusSchema,
-	organProcurementSchema, procurementStatusSchema, preservationStartSchema,
+	organMatchingSchema, organListQuerySchema, organDonorListQuerySchema, organMatchListQuerySchema, organMatchReviewSchema, organOfferSchema, organOfferResponseSchema, organOfferStatusSchema,
+	organProcurementSchema, organTransplantScheduleSchema, procurementStatusSchema, preservationStartSchema,
 	preservationPolicySchema, preservationPolicyLookupSchema, personalOrganDonorSchema, personalOrganRecipientSchema, personalOrganRecipientUpdateSchema, validateRequest, validateUuidParams,
 } from "../../middleware/validation";
 import {
-	updateOrganDonor, verifyDonorConsent, authorizeOrganDonor, createOrganRecord, updateOrganRecord, transitionOrgan, listOrgans, getOrganDashboardMetrics,
-	listOrganDonors, generateOrganMatches, startOrganPreservation, getOrganPreservation,
+	updateOrganDonor, verifyDonorConsent, authorizeOrganDonor, createOrganRecord, updateOrganRecord, transitionOrgan, listOrgans, getOrganDashboardMetrics, getOrganInventorySummary,
+	listOrganDonors, generateOrganMatches, generateRecipientMatches, listOrganMatches, startOrganPreservation, getOrganPreservation,
 	listOrganRecipients, updateOrganRecipient, reviewOrganRecipient, reviewOrganMatch, getOrganMatch, createOrganOffer, listOrganOffers, updateOrganOfferStatus,
 	respondToOrganOffer, createOrganProcurement, updateOrganProcurement, getOrganPreservationPolicy,
-	listOrganProcurements, getOrganDetail, upsertOrganPreservationPolicy, listOrganAudit, listAllOrganAudit, getOrganDonor, getOrganRecipient, getOrganOffer,
+	listOrganProcurements, scheduleOrganTransplant, getOrganDetail, upsertOrganPreservationPolicy, listOrganAudit, listAllOrganAudit, getOrganDonor, getOrganRecipient, getOrganOffer,
 	expireOrganOffers, checkOrganPreservationAlerts,
 } from "./service";
 import { cancelMyOrganRecipient, createMyOrganDonor, createMyOrganRecipient, getMyOrganDonor, listMyOrganRecipients, listOrganServiceInstitutions, updateMyOrganRecipient, withdrawMyOrganDonorConsent } from "./personal.service";
@@ -27,7 +27,20 @@ let preservationAlertTimer: ReturnType<typeof setInterval> | undefined;
 export function registerOrganCoordinationRoutes(router = Router()) {
 	startOfferExpiryWorker();
 	startPreservationAlertWorker();
-	router.use(authenticateRequest());
+	router.use(authenticateRequest(), (req, _res, next) => {
+		const actor = req.auth;
+		if (actor?.principalType === "INSTITUTION" && actor.role === "HOSPITAL_USER" && actor.institutionId) {
+			void database.institution.findUnique({ where: { id: actor.institutionId }, select: { type: true, hospitalProfile: { select: { bloodService: { select: { id: true } }, organService: { select: { id: true } } } } } }).then((institution) => {
+				if (institution) actor.capabilities = {
+					blood: institution.type === "BLOOD_BANK" || Boolean(institution.hospitalProfile?.bloodService),
+					organ: institution.type === "ORGAN_CENTRE" || Boolean(institution.hospitalProfile?.organService),
+				};
+				next();
+			}).catch(next);
+			return;
+		}
+		next();
+	});
 	// Personal users can manage their own donor interest and recipient requirement.
 	router.get("/me/organ-services", asyncRoute(async (req, res) => {
 		const latitude = req.query.latitude === undefined ? undefined : Number(req.query.latitude);
@@ -42,6 +55,7 @@ export function registerOrganCoordinationRoutes(router = Router()) {
 	router.post("/me/recipients", authorizeAction("USER", "ADMINISTRATOR"), validateRequest(personalOrganRecipientSchema), asyncRoute(async (req, res) => res.status(201).json({ recipient: await createMyOrganRecipient(req.auth!, req.body) })));
 	router.patch("/me/recipients/:recipientId", authorizeAction("USER", "ADMINISTRATOR"), validateUuidParams("recipientId"), validateRequest(personalOrganRecipientUpdateSchema), asyncRoute(async (req, res) => res.json({ recipient: await updateMyOrganRecipient(req.auth!, String(req.params.recipientId), req.body) })));
 	router.post("/me/recipients/:recipientId/cancel", authorizeAction("USER", "ADMINISTRATOR"), validateUuidParams("recipientId"), asyncRoute(async (req, res) => res.json(await cancelMyOrganRecipient(req.auth!, String(req.params.recipientId)))));
+	router.post("/me/offers/:offerId/respond", authorizeAction("USER", "ADMINISTRATOR"), validateUuidParams("offerId"), validateRequest(organOfferResponseSchema), asyncRoute(async (req, res) => res.json(await respondToOrganOffer(req.auth!, String(req.params.offerId), req.body.action, req.body.responseReason))));
 	router.get("/donors", authorizeAction(...coordinators), asyncRoute(async (req, res) => {
 		const query = organDonorListQuerySchema.safeParse(req.query);
 		if (!query.success) throw new ApiError(400, "VALIDATION_FAILED", "Donor filters are invalid.");
@@ -55,7 +69,9 @@ export function registerOrganCoordinationRoutes(router = Router()) {
 	router.get("/recipients/:recipientId", authorizeAction(...coordinators), validateUuidParams("recipientId"), asyncRoute(async (req, res) => res.json(await getOrganRecipient(req.auth!, String(req.params.recipientId)))));
 	router.patch("/recipients/:recipientId", authorizeAction(...coordinators), validateUuidParams("recipientId"), validateRequest(recipientRequirementUpdateSchema), asyncRoute(async (req, res) => res.json(await updateOrganRecipient(req.auth!, String(req.params.recipientId), req.body))));
 	router.post("/recipients/:recipientId/review", authorizeAction(...coordinators), validateUuidParams("recipientId"), validateRequest(organRecipientReviewSchema), asyncRoute(async (req, res) => res.json(await reviewOrganRecipient(req.auth!, String(req.params.recipientId), req.body.decision, req.body.reason))));
+	router.post("/recipients/:recipientId/matches", authorizeAction(...coordinators), validateUuidParams("recipientId"), validateRequest(organMatchingSchema), asyncRoute(async (req, res) => res.json(await generateRecipientMatches(req.auth!, String(req.params.recipientId), req.body.radiusKm))));
 	router.get("/dashboard", authorizeAction(...coordinators), asyncRoute(async (req, res) => res.json(await getOrganDashboardMetrics(req.auth!))));
+	router.get("/inventory-summary", authorizeAction(...coordinators), asyncRoute(async (req, res) => res.json(await getOrganInventorySummary(req.auth!))));
 	router.get("/", authorizeAction(...coordinators), asyncRoute(async (req, res) => {
 		const query = organListQuerySchema.safeParse(req.query);
 		if (!query.success) throw new ApiError(400, "VALIDATION_FAILED", "Organ filters are invalid.");
@@ -66,6 +82,11 @@ export function registerOrganCoordinationRoutes(router = Router()) {
 	router.get("/:organId([0-9a-fA-F-]{36})", authorizeAction(...coordinators), validateUuidParams("organId"), asyncRoute(async (req, res) => res.json(await getOrganDetail(req.auth!, String(req.params.organId)))));
 	router.patch("/:organId/status", authorizeAction(...coordinators), validateUuidParams("organId"), validateRequest(organStatusSchema), asyncRoute(async (req, res) => res.json(await transitionOrgan(req.auth!, String(req.params.organId), req.body.status as OrganStatus))));
 	router.post("/:organId/matches", authorizeAction(...coordinators), validateUuidParams("organId"), validateRequest(organMatchingSchema), asyncRoute(async (req, res) => res.json(await generateOrganMatches(req.auth!, String(req.params.organId), req.body.radiusKm))));
+	router.get("/matches", authorizeAction(...coordinators), asyncRoute(async (req, res) => {
+		const query = organMatchListQuerySchema.safeParse(req.query);
+		if (!query.success) throw new ApiError(400, "VALIDATION_FAILED", "Match filters are invalid.");
+		res.json({ matches: await listOrganMatches(req.auth!, query.data) });
+	}));
 	router.get("/matches/:matchId", authorizeAction(...coordinators), validateUuidParams("matchId"), asyncRoute(async (req, res) => res.json(await getOrganMatch(req.auth!, String(req.params.matchId)))));
 	router.get("/:organId/matches", authorizeAction(...coordinators), validateUuidParams("organId"), asyncRoute(async (req, res) => {
 		const organ = await database.organRecord.findUnique({ where: { id: String(req.params.organId) }, select: { id: true, institutionId: true } });
@@ -77,9 +98,9 @@ export function registerOrganCoordinationRoutes(router = Router()) {
 	router.get("/offers/:offerId", authorizeAction(...coordinators), validateUuidParams("offerId"), asyncRoute(async (req, res) => res.json(await getOrganOffer(req.auth!, String(req.params.offerId)))));
 	router.post("/offers", authorizeAction(...coordinators), validateRequest(organOfferSchema), asyncRoute(async (req, res) => res.status(201).json(await createOrganOffer(req.auth!, req.body))));
 	router.patch("/offers/:offerId/status", authorizeAction(...coordinators), validateUuidParams("offerId"), validateRequest(organOfferStatusSchema), asyncRoute(async (req, res) => res.json(await updateOrganOfferStatus(req.auth!, String(req.params.offerId), req.body.status))));
-	router.post("/offers/:offerId/respond", authorizeAction(...coordinators), validateUuidParams("offerId"), validateRequest(organOfferResponseSchema), asyncRoute(async (req, res) => res.json(await respondToOrganOffer(req.auth!, String(req.params.offerId), req.body.action, req.body.responseReason))));
 	router.post("/procurements", authorizeAction(...coordinators), validateRequest(organProcurementSchema), asyncRoute(async (req, res) => res.status(201).json(await createOrganProcurement(req.auth!, req.body))));
 	router.get("/procurements", authorizeAction(...coordinators), asyncRoute(async (req, res) => res.json({ procurements: await listOrganProcurements(req.auth!) })));
+	router.post("/:organId/transplant/schedule", authorizeAction(...coordinators), validateUuidParams("organId"), validateRequest(organTransplantScheduleSchema), asyncRoute(async (req, res) => res.status(201).json(await scheduleOrganTransplant(req.auth!, String(req.params.organId), req.body))));
 	router.patch("/procurements/:procurementId/status", authorizeAction(...coordinators), validateUuidParams("procurementId"), validateRequest(procurementStatusSchema), asyncRoute(async (req, res) => res.json(await updateOrganProcurement(req.auth!, String(req.params.procurementId), req.body.status as ProcurementStatus))));
 	router.post("/:organId/preservation/start", authorizeAction(...coordinators), validateUuidParams("organId"), validateRequest(preservationStartSchema), asyncRoute(async (req, res) => res.json(await startOrganPreservation(req.auth!, String(req.params.organId), { method: req.body.method as PreservationMethod, solution: req.body.solution }))));
 	router.get("/:organId/preservation", authorizeAction(...coordinators), validateUuidParams("organId"), asyncRoute(async (req, res) => res.json(await getOrganPreservation(req.auth!, String(req.params.organId)))));

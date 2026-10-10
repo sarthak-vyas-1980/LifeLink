@@ -37,7 +37,7 @@ export default function LoginPage() {
         method: "POST",
         body: JSON.stringify({
           email,
-          phone,
+          ...(phone.trim() ? { phone: phone.trim() } : {}),
           password,
           accountType,
         }),

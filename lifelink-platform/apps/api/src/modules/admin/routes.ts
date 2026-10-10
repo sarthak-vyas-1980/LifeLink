@@ -21,7 +21,7 @@ export function registerAdminRoutes(router = Router()) {
   }));
   router.get("/overview", asyncRoute(async (req, res) => {
     const [institutions, institutionStatus, organMetrics, donorCounts, donorAuthorizations, recipientCounts, organStatuses, offers, procurements, activity] = await Promise.all([
-      database.institution.findMany({ select: { id: true, name: true, type: true, status: true, address: true, createdAt: true, _count: { select: { organRecords: true, organDonors: true, organRecipients: true, organWorkflowEvents: true, offeringOrganOffers: true, receivingOrganOffers: true, organProcurements: true } } }, orderBy: { createdAt: "desc" }, take: 500 }),
+      database.institution.findMany({ select: { id: true, name: true, type: true, status: true, address: true, contactNumber: true, account: { select: { email: true, phone: true } }, createdAt: true, _count: { select: { organRecords: true, organDonors: true, organRecipients: true, organWorkflowEvents: true, offeringOrganOffers: true, receivingOrganOffers: true, organProcurements: true } } }, orderBy: { createdAt: "desc" }, take: 500 }),
       database.institution.groupBy({ by: ["status"], _count: { _all: true } }),
       getOrganDashboardMetrics(req.auth!),
       database.organDonor.groupBy({ by: ["institutionId", "status"], _count: { _all: true } }),

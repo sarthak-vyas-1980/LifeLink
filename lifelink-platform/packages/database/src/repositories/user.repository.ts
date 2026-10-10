@@ -9,7 +9,7 @@ export function findUserById(id: string) {
 }
 
 export function findUserByEmail(email: string) {
-  return database.user.findUnique({ where: { email } });
+  return database.user.findFirst({ where: { email: { equals: email, mode: "insensitive" } } });
 }
 
 export function createUser(data: Prisma.UserCreateInput) {

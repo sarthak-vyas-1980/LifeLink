@@ -23,7 +23,8 @@ export async function requestApi<T>(path: string, init: RequestInit = {}): Promi
       window.dispatchEvent(new Event("lifelink:session-invalid"));
     }
     const trace = payload.code === "INTERNAL_ERROR" && typeof payload.traceId === "string" ? ` Reference: ${payload.traceId}.` : "";
-    throw new ApiFailure(`${payload.message ?? "The request could not be completed."}${trace}`, response.status, payload.code, payload.fieldErrors);
+    const message = payload.message ?? `LifeLink API returned an unreadable response (HTTP ${response.status}). Check that the API server is running.`;
+    throw new ApiFailure(`${message}${trace}`, response.status, payload.code, payload.fieldErrors);
   }
   return payload as T;
 }

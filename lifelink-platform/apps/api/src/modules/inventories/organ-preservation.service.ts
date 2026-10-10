@@ -30,9 +30,10 @@ export function calculatePreservationClock(input: { start: Date | null; maximumH
 	return { status, elapsedMs, remainingMs: Math.max(0, remainingMs) };
 }
 export async function startOrganPreservation(actor: AuthContext, organId: string, input: { method: PreservationMethod; solution?: string }) {
-	const organ = await database.organRecord.findUnique({ where: { id: organId }, select: { id: true, institutionId: true, status: true, organType: true, preservationStartTime: true } });
+	const organ = await database.organRecord.findUnique({ where: { id: organId }, select: { id: true, institutionId: true, status: true, organType: true, preservationStartTime: true, donor: { select: { donorType: true } } } });
 	if (!organ) throw new ApiError(404, "ORGAN_NOT_FOUND", "Organ record not found.");
 	await assertInstitution(actor, organ.institutionId);
+	if (organ.donor.donorType !== "POSTHUMOUS_INTENT") throw new ApiError(409, "PRESERVATION_NOT_APPLICABLE", "The inventory preservation timer is only used for posthumous donor cases.");
 	if (organ.status !== OrganStatus.RETRIEVED || organ.preservationStartTime) throw new ApiError(409, "PRESERVATION_NOT_ALLOWED", "Preservation can start once retrieval is recorded.");
 	const policy = await findPreservationPolicy(organ.organType, input.method, organ.institutionId);
 	if (!policy) throw new ApiError(409, "PRESERVATION_POLICY_REQUIRED", "An active configurable operational timing policy is required.");
@@ -53,16 +54,17 @@ export async function getOrganPreservationPolicy(actor: AuthContext, organType: 
 	return { policy, disclaimer: "Operational timing configuration; not a clinical rule." };
 }
 export async function getOrganPreservation(actor: AuthContext, organId: string) {
-	const organ = await database.organRecord.findUnique({ where: { id: organId }, select: { id: true, institutionId: true, destinationCentreId: true, organType: true, preservationStartTime: true, preservationMethod: true, currentLocation: { select: { name: true } }, destinationCentre: { select: { name: true } } } });
+	const organ = await database.organRecord.findUnique({ where: { id: organId }, select: { id: true, institutionId: true, organType: true, preservationStartTime: true, preservationMethod: true } });
 	if (!organ) throw new ApiError(404, "ORGAN_NOT_FOUND", "Organ record not found.");
-	if (actor.role !== "ADMINISTRATOR" && actor.institutionId !== organ.institutionId && actor.institutionId !== organ.destinationCentreId) throw new ApiError(404, "ORGAN_NOT_FOUND", "Organ record not found.");
+	if (actor.role !== "ADMINISTRATOR" && actor.institutionId !== organ.institutionId) throw new ApiError(404, "ORGAN_NOT_FOUND", "Organ record not found.");
 	if (!organ.preservationMethod) return { organ, policy: null, clock: { status: PreservationStatus.NOT_STARTED, elapsedMs: 0, remainingMs: 0 }, disclaimer: "Operational timing indicator; clinical suitability is determined by authorized professionals." };
 	const policy = await findPreservationPolicy(organ.organType, organ.preservationMethod, organ.institutionId);
 	if (!policy) return { organ, policy: null, clock: null, disclaimer: "Operational timing policy is not configured." };
 	return { organ, policy: { targetHours: policy.targetHours, warningHours: policy.warningHours, criticalHours: policy.criticalHours, maximumHours: policy.maximumHours, label: policy.label }, clock: calculatePreservationClock({ start: organ.preservationStartTime, maximumHours: policy.maximumHours, warningHours: policy.warningHours, criticalHours: policy.criticalHours }), disclaimer: "Operational timing indicator; clinical suitability is determined by authorized professionals." };
 }
 export async function checkOrganPreservationAlerts(now = new Date()) {
-	const active = await database.organRecord.findMany({ where: { status: OrganStatus.PRESERVING, preservationStartTime: { not: null }, preservationMethod: { not: null } }, select: { id: true, institutionId: true, destinationCentreId: true, organType: true, preservationMethod: true, preservationStartTime: true, reference: true } });
+	const activeStatuses = [OrganStatus.PRESERVING, OrganStatus.OFFERED, OrganStatus.ACCEPTED, OrganStatus.FINAL_ASSESSMENT, OrganStatus.ALLOCATED];
+	const active = await database.organRecord.findMany({ where: { status: { in: activeStatuses }, preservationStartTime: { not: null }, preservationMethod: { not: null } }, select: { id: true, institutionId: true, organType: true, preservationMethod: true, preservationStartTime: true, reference: true, status: true } });
 	let alertsCreated = 0;
 	for (const organ of active) {
 		if (!organ.preservationStartTime || !organ.preservationMethod) continue;
@@ -78,9 +80,9 @@ export async function checkOrganPreservationAlerts(now = new Date()) {
 			const duplicate = await tx.organWorkflowEvent.findFirst({ where: { organId: organ.id, eventType, createdAt: { gte: organ.preservationStartTime! } }, select: { id: true } });
 			if (duplicate) return;
 			const updated = clock.status === PreservationStatus.EXPIRED
-				? await tx.organRecord.updateMany({ where: { id: organ.id, status: OrganStatus.PRESERVING }, data: { status: OrganStatus.EXPIRED } })
+				? await tx.organRecord.updateMany({ where: { id: organ.id, status: { in: activeStatuses } }, data: { status: OrganStatus.EXPIRED } })
 				: { count: 0 };
-			await addEvent(tx, { organId: organ.id, eventType, fromStatus: OrganStatus.PRESERVING, toStatus: updated.count ? OrganStatus.EXPIRED : OrganStatus.PRESERVING, metadata: { reference: organ.reference, preservationStatus: clock.status, remainingMs: clock.remainingMs, policyLabel: policy.label }, institutionIds: [organ.institutionId, ...(organ.destinationCentreId ? [organ.destinationCentreId] : [])] });
+			await addEvent(tx, { organId: organ.id, eventType, fromStatus: organ.status, toStatus: updated.count ? OrganStatus.EXPIRED : organ.status, metadata: { reference: organ.reference, preservationStatus: clock.status, remainingMs: clock.remainingMs, policyLabel: policy.label }, institutionIds: [organ.institutionId] });
 			await tx.auditLog.create({ data: { action: eventType, entityType: "OrganRecord", entityId: organ.id, metadata: { preservationStatus: clock.status, policyLabel: policy.label } } });
 			alertsCreated++;
 		});

@@ -69,7 +69,7 @@
 .organ-workspace>.page-heading{padding:8px 2px 0;margin-bottom:0}
 .organ-workspace>.page-heading h1{font-size:34px;letter-spacing:-1.1px}
 .organ-workspace>.page-heading p{max-width:760px;font-size:14px;line-height:1.55}
-.organ-section-nav{display:flex;align-items:stretch;gap:5px;overflow-x:auto;padding:0 0 1px;border-bottom:1px solid #dce8e3;scrollbar-width:thin}
+.organ-section-nav{display:flex;flex-wrap:wrap;align-items:stretch;gap:5px;overflow:visible;padding:0 0 1px;border-bottom:1px solid #dce8e3}
 .organ-section-nav a{position:relative;display:flex;align-items:center;justify-content:center;gap:8px;min-height:48px;padding:0 16px;color:#647873;text-decoration:none;font-size:12px;font-weight:650;white-space:nowrap;border-radius:9px 9px 0 0;transition:color .16s,background .16s}
 .organ-section-nav a:hover{background:#eaf4ef;color:#146f61}
 .organ-section-nav a.active{background:#e9f5ef;color:#087e79}
@@ -161,10 +161,10 @@
 .organ-table-wrap{width:100%;max-width:100%;min-width:0;overflow-x:auto;overscroll-behavior-x:contain}
 .organ-table-donors,.organ-table-recipients{width:100%;min-width:0;table-layout:fixed}
 .organ-table-donors th,.organ-table-donors td,.organ-table-recipients th,.organ-table-recipients td{white-space:normal;overflow-wrap:anywhere;line-height:1.4}
-.organ-table-donors th:nth-child(1){width:20%}.organ-table-donors th:nth-child(2){width:16%}.organ-table-donors th:nth-child(3){width:20%}.organ-table-donors th:nth-child(6){width:13%}.organ-table-donors th:nth-child(7){width:14%}.organ-table-donors th:nth-child(8){width:17%}
-.organ-table-donors th:nth-child(4),.organ-table-donors td:nth-child(4),.organ-table-donors th:nth-child(5),.organ-table-donors td:nth-child(5),.organ-table-donors th:nth-child(9),.organ-table-donors td:nth-child(9),.organ-table-donors th:nth-child(10),.organ-table-donors td:nth-child(10){display:none}
-.organ-table-recipients th:nth-child(1){width:19%}.organ-table-recipients th:nth-child(2){width:16%}.organ-table-recipients th:nth-child(3){width:18%}.organ-table-recipients th:nth-child(5){width:13%}.organ-table-recipients th:nth-child(7){width:10%}.organ-table-recipients th:nth-child(8){width:12%}.organ-table-recipients th:nth-child(9){width:12%}
-.organ-table-recipients th:nth-child(4),.organ-table-recipients td:nth-child(4),.organ-table-recipients th:nth-child(6),.organ-table-recipients td:nth-child(6){display:none}
+.organ-table-donors th:nth-child(1){width:16%}.organ-table-donors th:nth-child(2){width:13%}.organ-table-donors th:nth-child(3){width:16%}.organ-table-donors th:nth-child(6){width:12%}.organ-table-donors th:nth-child(7){width:11%}.organ-table-donors th:nth-child(8){width:12%}.organ-table-donors th:nth-child(9){width:20%}
+.organ-table-donors th:nth-child(4),.organ-table-donors td:nth-child(4),.organ-table-donors th:nth-child(5),.organ-table-donors td:nth-child(5),.organ-table-donors th:nth-child(10),.organ-table-donors td:nth-child(10),.organ-table-donors th:nth-child(11),.organ-table-donors td:nth-child(11){display:none}
+.organ-table-recipients th:nth-child(1){width:17%}.organ-table-recipients th:nth-child(2){width:13%}.organ-table-recipients th:nth-child(3){width:18%}.organ-table-recipients th:nth-child(4){width:13%}.organ-table-recipients th:nth-child(5){width:10%}.organ-table-recipients th:nth-child(6){width:13%}.organ-table-recipients th:nth-child(7){width:16%}
+.organ-recipient-row{cursor:pointer}.organ-recipient-row:hover{background:#f3faf7}.organ-recipient-row:focus-visible{outline:2px solid #138b7c;outline-offset:-2px}
 .organ-table-donors td:first-child a,.organ-table-recipients td:first-child a{display:inline-block;max-width:100%;overflow-wrap:anywhere}
 @media(max-width:1200px){.organ-filter-form{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.organ-filter-form>button[type=submit]{min-width:132px}}
 @media(max-width:760px){.organ-filter-form{grid-template-columns:repeat(2,minmax(0,1fr));padding:16px!important}.organ-filter-form label{white-space:normal}.organ-table-donors th,.organ-table-donors td,.organ-table-recipients th,.organ-table-recipients td{padding:11px 8px!important;font-size:10px!important}.organ-stage-chip{max-width:100%;font-size:9px}}
@@ -363,3 +363,166 @@
 @media(max-width:700px){.admin-audit-item summary{grid-template-columns:9px minmax(0,1fr) max-content;gap:8px}.admin-audit-item summary time{max-width:88px;font-size:8px}.admin-audit-details{grid-template-columns:1fr;margin-left:17px}}
 @media(max-width:700px){.admin-audit-row{grid-template-columns:9px minmax(0,1fr) auto;gap:7px}.admin-audit-row time{grid-column:2;grid-row:2;max-width:none;text-align:left;font-size:8px}.admin-audit-row .admin-row-hint{grid-column:3;grid-row:1 / span 2}.admin-audit-details{grid-template-columns:1fr}}
 .organ-service-address{display:block;margin-top:1px;color:#435d57;font-size:10px;font-weight:500;line-height:1.4}
+
+/* Keep offer rows readable while reserving enough width for their action. */
+.organ-table-offers{width:100%;min-width:980px;table-layout:fixed}
+.organ-table-offers th,.organ-table-offers td{white-space:nowrap;overflow-wrap:normal;vertical-align:middle}
+.organ-table-offers th:nth-child(1){width:13%}
+.organ-table-offers th:nth-child(2){width:14%}
+.organ-table-offers th:nth-child(3){width:16%}
+.organ-table-offers th:nth-child(4){width:8%}
+.organ-table-offers th:nth-child(5){width:17%}
+.organ-table-offers th:nth-child(6){width:16%}
+.organ-table-offers th:nth-child(7){width:16%}
+.organ-table-offers td .button{width:auto;min-width:0;max-width:none;justify-content:center;padding:7px 9px;white-space:nowrap;text-align:center;line-height:normal}
+.inventory-potential-donors .panel-heading p{max-width:760px}.inventory-potential-donor-list{display:grid;gap:8px}.inventory-potential-donor-list>article{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:12px 14px;border:1px solid var(--line);border-radius:9px;background:#fbfdfc}.inventory-potential-donor-list>article>div{display:grid;gap:4px;min-width:0}.inventory-potential-donor-list strong{color:var(--ink);font-size:11px}.inventory-potential-donor-list small{color:var(--muted);font-size:10px}
+
+.organ-table-transplants{width:100%;min-width:0;table-layout:fixed}.organ-table-transplants th,.organ-table-transplants td{white-space:normal;overflow-wrap:anywhere;line-height:1.4}.organ-table-transplants th:nth-child(1){width:15%}.organ-table-transplants th:nth-child(2),.organ-table-transplants th:nth-child(3){width:12%}.organ-table-transplants th:nth-child(4){width:10%}.organ-table-transplants th:nth-child(5),.organ-table-transplants th:nth-child(6){width:14%}.organ-table-transplants th:nth-child(7){width:12%}.organ-table-transplants th:nth-child(8){width:11%}.organ-table-transplants td:last-child .button{white-space:normal;min-height:32px;height:auto;padding:6px 8px;line-height:1.2}
+
+.organ-table-transplants .transplant-start-button{background:#087f73!important;border-color:#087f73!important;color:#fff!important}
+
+.organ-table-transplants th:nth-child(1){width:15%}.organ-table-transplants th:nth-child(2){width:12%}.organ-table-transplants th:nth-child(3){width:12%}.organ-table-transplants th:nth-child(4){width:12%}.organ-table-transplants th:nth-child(5){width:14%}.organ-table-transplants th:nth-child(6){width:12%}.organ-table-transplants th:nth-child(7){width:12%}.organ-table-transplants th:nth-child(8){width:11%}
+.organ-table-transplants th,.organ-table-transplants td{vertical-align:middle}.organ-table-transplants td:nth-child(4) .pill{display:inline-block;max-width:100%;white-space:normal;text-align:center;line-height:1.25}.organ-table-transplants td:last-child .button{max-width:100%;white-space:normal;overflow-wrap:anywhere}
+.organ-table-transplants .allocation-confirm-button{background:#087f73!important;border-color:#087f73!important;color:#fff!important}
+
+.inventory-stock-summary .panel-heading p{max-width:800px}.inventory-stock-summary .organ-table td:last-child{min-width:280px}.inventory-stock-summary .organ-table td:last-child small{display:block;margin:3px 0;color:var(--muted);font-size:10px}.inventory-stock-summary>.organ-disclaimer{margin:12px 0 0;color:var(--muted);font-size:10px}
+
+.inventory-stock-summary-compact{padding:16px 20px}.inventory-stock-summary-compact .panel-heading{margin-bottom:10px}.inventory-stock-summary-compact .panel-heading h2{font-size:18px}.inventory-stock-summary-compact .panel-heading p{margin-top:4px;font-size:11px}.inventory-stock-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}.inventory-stock-item{min-width:0;padding:10px 12px;border:1px solid var(--line);border-radius:9px;background:#fbfdfc}.inventory-stock-item-heading{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px}.inventory-stock-item-heading strong{font-size:11px;color:var(--ink)}.inventory-stock-item-heading span{flex:none;padding:3px 7px;border-radius:999px;background:#e8f5f1;color:#147e70;font-size:10px;font-weight:700}.inventory-stock-empty{color:var(--muted);font-size:10px}.inventory-stock-organs{display:grid;gap:6px}.inventory-stock-organ{display:flex;align-items:center;justify-content:space-between;gap:8px;padding-top:6px;border-top:1px solid var(--line)}.inventory-stock-organ>div{display:grid;gap:3px;min-width:0}.inventory-stock-organ>div>strong{font-size:10px;color:var(--ink);font-weight:600}.inventory-stock-organ>div>small{font-size:9px;color:var(--muted)}.inventory-stock-organ .clock-state{display:flex;min-width:0;align-items:center;gap:6px}.inventory-stock-organ .clock-state strong{font-size:11px;white-space:nowrap}.inventory-stock-organ .clock-state small{font-size:9px;white-space:nowrap}@media(max-width:900px){.inventory-stock-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:580px){.inventory-stock-grid{grid-template-columns:1fr}.inventory-stock-summary-compact{padding:14px}}
+
+.inventory-stock-item{display:block;width:100%;text-align:left;font:inherit;color:inherit;cursor:pointer;transition:border-color .15s ease,box-shadow .15s ease}.inventory-stock-item:hover,.inventory-stock-item:focus-visible{border-color:#68bca9;box-shadow:0 3px 12px rgba(17,105,91,.1);outline:none}.inventory-stock-card-summary{display:grid;gap:3px;color:var(--ink);font-size:10px}.inventory-stock-card-summary small{color:var(--muted);font-size:9px}.inventory-stock-modal-backdrop{position:fixed;inset:0;z-index:1200;display:grid;place-items:center;padding:20px;background:rgba(8,32,34,.48)}.inventory-stock-modal{width:min(760px,100%);max-height:min(82vh,760px);overflow:auto;padding:22px;border:1px solid var(--line);border-radius:16px;background:#fff;box-shadow:0 20px 60px rgba(7,34,36,.24)}.inventory-stock-modal-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;padding-bottom:14px;border-bottom:1px solid var(--line)}.inventory-stock-modal-heading h2{margin:4px 0;font-size:20px}.inventory-stock-modal-heading p{margin:0;color:var(--muted);font-size:11px}.inventory-stock-modal-list{display:grid;gap:10px;padding-top:12px}.inventory-stock-record{padding:12px 14px;border:1px solid var(--line);border-radius:10px;background:#fbfdfc}.inventory-stock-record>header{display:flex;align-items:center;justify-content:space-between;gap:12px}.inventory-stock-record>header>div{display:grid;gap:3px}.inventory-stock-record>header strong{font-size:12px}.inventory-stock-record>header small{color:var(--muted);font-size:10px}.inventory-stock-record dl{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 16px;margin:12px 0}.inventory-stock-record dl>div{display:grid;gap:3px;min-width:0}.inventory-stock-record dt{color:var(--muted);font-size:9px;text-transform:uppercase;letter-spacing:.06em}.inventory-stock-record dd{margin:0;color:var(--ink);font-size:11px;overflow-wrap:anywhere}.inventory-stock-record dd small{color:var(--muted);font-size:9px}.inventory-stock-record .text-button{font-size:10px}.inventory-stock-modal .clock-state{min-width:0}.inventory-stock-modal .clock-state strong{font-size:12px}.inventory-stock-modal .clock-state small{font-size:9px}@media(max-width:580px){.inventory-stock-modal-backdrop{padding:10px}.inventory-stock-modal{padding:16px}.inventory-stock-record dl{grid-template-columns:1fr}}
+
+.organ-table-audit{table-layout:fixed}.organ-table-audit th,.organ-table-audit td{white-space:normal;overflow-wrap:anywhere;vertical-align:middle;line-height:1.4}.organ-table-audit th:nth-child(1){width:29%}.organ-table-audit th:nth-child(2){width:17%}.organ-table-audit th:nth-child(3),.organ-table-audit th:nth-child(4){width:16%}.organ-table-audit th:nth-child(5){width:22%}.organ-table-audit td:nth-child(5){min-width:0;font-variant-numeric:tabular-nums}
+
+.workflow-path{padding:12px 16px!important}.workflow-path-accordion{border-bottom:1px solid #eaf0ed}.workflow-path-accordion:last-of-type{border-bottom:0}.workflow-path-accordion>summary{display:flex;align-items:center;gap:14px;padding:8px 2px;cursor:pointer;list-style:none}.workflow-path-accordion>summary::-webkit-details-marker{display:none}.workflow-path-accordion>summary>div{display:grid;grid-template-columns:190px minmax(0,1fr);align-items:center;gap:12px;min-width:0;flex:1}.workflow-path-accordion>summary .eyebrow{font-size:9px}.workflow-path-accordion>summary p{margin:0;color:#738681;font-size:10px;line-height:1.35}.workflow-path-accordion>summary:after{content:"+";display:grid;place-items:center;flex:none;width:22px;height:22px;border:1px solid var(--line);border-radius:50%;color:#087e79;font-size:15px;line-height:1}.workflow-path-accordion[open]>summary:after{content:"−"}.workflow-path-accordion>summary:hover .eyebrow,.workflow-path-accordion>summary:focus-visible .eyebrow{color:#087e79}.workflow-path-accordion>summary:focus-visible{outline:2px solid #68bca9;outline-offset:2px;border-radius:6px}.workflow-path-accordion .workflow-path-key{font-size:9px}.workflow-path-accordion .flow-graph{gap:10px;margin:8px 0 12px}.workflow-path-accordion .flow-node{min-height:48px;padding:7px 8px;grid-template-columns:23px minmax(0,1fr);column-gap:7px;border-radius:8px;box-shadow:none}.workflow-path-accordion .flow-node-number{width:22px;height:22px;font-size:8px}.workflow-path-accordion .flow-node strong{font-size:10px;line-height:1.25}.workflow-path-accordion .flow-node:not(:last-child):after{right:-18px;font-size:14px}.workflow-path-accordion .flow-graph-row.returning .flow-node:not(:last-child):after{left:-18px;right:auto}.workflow-path-accordion .flow-graph-row.forward .flow-node:last-child .flow-turn{bottom:-17px;font-size:14px}.workflow-path .workflow-path-alternates{align-items:center;gap:5px;padding-top:8px}.workflow-path .workflow-path-alternates span{width:auto;margin-right:2px;font-size:9px}.workflow-path .workflow-path-alternates b{padding:4px 7px;font-size:9px}@media(max-width:760px){.workflow-path-accordion>summary{align-items:flex-start;gap:8px}.workflow-path-accordion>summary>div{grid-template-columns:1fr;gap:3px}.workflow-path-accordion .workflow-path-key{display:none}.workflow-path-accordion .flow-graph{overflow-x:auto;padding-bottom:4px}.workflow-path-accordion .flow-graph-row{min-width:660px}.workflow-path .workflow-path-alternates{flex-wrap:wrap}}
+
+/* Slightly larger type keeps the compact overview workflow readable. */
+.workflow-path-accordion>summary .eyebrow{font-size:10px}
+.workflow-path-accordion>summary p{font-size:11px}
+.workflow-path-accordion .workflow-path-key{font-size:10px}
+.workflow-path .workflow-path-alternates span,.workflow-path .workflow-path-alternates b{font-size:10px}
+.workflow-path-accordion .flow-node strong{font-size:11px}
+
+/* Balance all nine workspace tabs across two rows. */
+.organ-section-nav{display:grid;grid-template-columns:repeat(20,minmax(0,1fr));gap:5px}
+.organ-section-nav a{grid-column:span 4;padding:0 8px}
+.organ-section-nav a:nth-child(n+6){grid-column:span 5}
+@media(max-width:760px){.organ-section-nav{grid-template-columns:repeat(4,minmax(0,1fr));margin-right:0;padding-right:0}.organ-section-nav a,.organ-section-nav a:nth-child(n+6){grid-column:auto;padding:0 8px}}
+@media(max-width:420px){.organ-section-nav{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+.organ-donation-history{max-width:1120px;width:100%;padding:24px 28px!important;border:1px solid #dfeae6;border-radius:16px!important;box-shadow:0 10px 28px rgba(24,66,56,.045)}
+.organ-donation-history .organ-personal-record-list{display:grid;gap:9px}
+.organ-consent-requests{display:grid;gap:9px;margin-top:20px;padding-top:16px;border-top:1px solid var(--line)}
+.organ-consent-requests h3{margin:0;color:var(--ink);font-size:14px}
+@media(max-width:650px){.organ-donation-history{padding:18px!important}}
+
+.latest-request-summary{display:flex;align-items:center;gap:12px;cursor:pointer;list-style:none}
+.latest-request-summary::-webkit-details-marker{display:none}
+.latest-request-main{display:grid;gap:3px;flex:1;min-width:0}
+.latest-request-main strong{overflow:hidden;color:var(--ink);font-size:13px;text-overflow:ellipsis;white-space:nowrap}
+.latest-request-main small{overflow:hidden;color:var(--muted);font-size:10px;text-overflow:ellipsis;white-space:nowrap}
+.latest-request-stage{padding:5px 9px;border-radius:999px;background:#edf7f2;color:#26735e;font-size:10px;font-weight:700;text-transform:capitalize;white-space:nowrap}
+.latest-request-toggle{display:flex;align-items:center;gap:7px;color:#087e79;font-size:10px;font-weight:700;white-space:nowrap}
+.latest-request-toggle b{display:grid;place-items:center;width:22px;height:22px;border:1px solid var(--line);border-radius:50%;font-size:14px;line-height:1;transition:transform .15s}
+.latest-request-card[open]>.latest-request-summary .latest-request-toggle b{transform:rotate(45deg)}
+.latest-request-expanded{display:grid;gap:8px;margin-top:13px;padding-top:12px;border-top:1px solid #e6efea}
+.latest-request-expanded-footer{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.latest-request-expanded-footer small{color:#91a19c;font-size:9px}
+@media(max-width:700px){.latest-request-summary{gap:8px;flex-wrap:wrap}.latest-request-main{flex-basis:calc(100% - 105px)}.latest-request-stage{margin-left:40px}.latest-request-expanded-footer{align-items:flex-start;flex-direction:column}}
+
+.admin-institution-performance .panel-heading{align-items:center}
+.admin-institution-directory .panel-heading{align-items:center}
+.admin-directory-count{padding:6px 10px;border-radius:999px;background:#edf7f2;color:#26735e;font-size:10px;font-weight:700;white-space:nowrap}
+.admin-institution-table-wrap{width:100%;overflow-x:auto}
+.admin-institution-table{width:100%;min-width:760px;border-collapse:collapse;text-align:left}
+.admin-institution-table th{padding:10px 12px;border-bottom:1px solid var(--line);color:#78908a;font-size:9px;letter-spacing:.06em;text-transform:uppercase;white-space:nowrap}
+.admin-institution-table td{padding:12px;border-bottom:1px solid #eef3f0;color:#526865;font-size:11px;vertical-align:middle}
+.admin-institution-table tbody tr:last-child td{border-bottom:0}
+.admin-institution-table td:first-child strong,.admin-institution-table td:first-child small{display:block}
+.admin-institution-table td:first-child strong{color:var(--ink);font-size:11px}
+.admin-institution-table td:first-child small{margin-top:3px;color:#859592;font-size:9px}
+.admin-institution-table select{min-height:32px;max-width:190px;padding:0 8px;border:1px solid var(--line);border-radius:7px;background:#fbfdfc;color:var(--ink);font:inherit}
+.admin-institution-directory-name{display:grid;justify-items:start;gap:3px}
+.admin-institution-directory-name strong{color:var(--ink);font-size:11px}
+.admin-institution-directory-name small{color:#859592;font-size:9px}
+.admin-institution-details-toggle{display:inline-flex;align-items:center;gap:4px;margin-top:3px}
+.admin-institution-expanded-row>td{padding:0 12px 12px!important;background:#f8fbf9}
+.admin-institution-expanded-row .admin-institution-details{margin:0;border:1px solid #e7efec;border-radius:8px}
+.admin-institution-analytics-chart{grid-column:1/-1;display:grid;gap:9px;padding-top:12px;border-top:1px solid #e7efec}
+.admin-institution-analytics-chart h3{margin:0;color:var(--ink);font-size:11px}
+.admin-institution-chart-svg{display:block;width:100%;height:auto;overflow:visible}
+.admin-chart-gridline{stroke:#e3ece9;stroke-width:1}
+.admin-chart-rowline{stroke:#eef3f1;stroke-width:1}
+.admin-chart-point{fill:#087e79;stroke:#fff;stroke-width:2}
+.admin-chart-label,.admin-chart-tick{fill:#738487;font:10px 'DM Sans',sans-serif}
+.admin-chart-value{fill:#152d31;font:700 10px Manrope,sans-serif}
+.admin-chart-axis-title{fill:#738487;font:9px 'DM Sans',sans-serif}
+.admin-institution-comparison-chart{display:grid;gap:8px;margin-top:16px;padding-top:15px;border-top:1px solid #e7efec}
+.admin-institution-chart-heading{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.admin-institution-chart-heading h3{margin:0;color:var(--ink);font-size:12px}
+.admin-institution-chart-legend{display:flex;flex-wrap:wrap;gap:12px;color:#738487;font-size:10px}
+.admin-institution-chart-legend span{display:inline-flex;align-items:center;gap:5px}
+.admin-institution-chart-legend i{width:8px;height:8px;border-radius:50%}
+.admin-institution-comparison-scroll{max-height:380px;overflow:auto}
+.admin-institution-comparison-scroll svg{display:block;width:100%;min-width:760px;height:auto}
+.admin-comparison-value{fill:#526865;font:700 9px Manrope,sans-serif}
+@media(max-width:700px){.admin-institution-chart-heading{align-items:flex-start;flex-direction:column}.admin-institution-comparison-scroll{max-height:340px}}
+.institution-analytics-filters{display:grid;grid-template-columns:repeat(4,minmax(0,1fr)) auto;align-items:end;gap:12px;margin:0 0 16px}
+.institution-analytics-filters label{display:grid;gap:6px;color:#526865;font-size:10px;font-weight:700}
+.institution-analytics-filters select{width:100%;min-height:38px;padding:0 10px;border:1px solid var(--line);border-radius:8px;background:#fbfdfc;color:var(--ink);font:500 11px 'DM Sans',sans-serif}
+.institution-analytics-filters .button{min-height:38px}
+.institution-request-chart-grid{display:grid;grid-template-columns:minmax(0,1fr);gap:12px}
+.institution-request-chart{min-width:0;padding:14px;border:1px solid var(--line);border-radius:10px;background:#fbfdfc}
+.institution-request-chart.combined{grid-column:1/-1}
+.institution-request-chart-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:8px}
+.institution-request-chart-heading h3{margin:0;font-size:12px}
+.institution-request-chart-heading>div{display:flex;flex-wrap:wrap;gap:10px;color:#738487;font-size:9px}
+.institution-request-chart-heading span{display:inline-flex;align-items:center;gap:4px}
+.institution-request-chart-heading i{width:8px;height:8px;border-radius:50%}
+.institution-request-chart svg{display:block;width:100%;height:auto;overflow:visible}
+.institution-chart-gridline{stroke:#e3ece9;stroke-width:1}
+.institution-chart-tick,.institution-chart-axis-title{fill:#738487;font:9px 'DM Sans',sans-serif}
+.institution-analytics-caption{margin:12px 0 0;font-size:10px}
+@media(max-width:850px){.institution-analytics-filters{grid-template-columns:repeat(2,minmax(0,1fr))}.institution-analytics-filters .button{justify-self:start}.institution-request-chart-grid{grid-template-columns:1fr}}
+@media(max-width:560px){.institution-analytics-filters{grid-template-columns:1fr}.institution-request-chart.combined{grid-column:auto}.institution-request-chart-heading{align-items:flex-start;flex-direction:column}.institution-request-chart{padding:10px}}
+
+.institution-organ-analytics{overflow:hidden;background:linear-gradient(145deg,#fff 0%,#f8fcfa 100%)}
+.institution-organ-analytics>.panel-heading{align-items:center;margin-bottom:12px}
+.institution-organ-analytics>.panel-heading p,.institution-organ-activity>.panel-heading p{margin:5px 0 0;color:var(--muted);font-size:11px}
+.institution-organ-analytics>.panel-heading .button{display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+.institution-organ-stage-grid{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:8px}
+.institution-organ-stage{position:relative;display:grid;align-content:start;gap:6px;min-height:96px;overflow:hidden;padding:12px 11px;border:1px solid var(--line);border-radius:10px;background:#fff}
+.institution-organ-stage:before{position:absolute;inset:0 auto 0 0;width:4px;background:var(--stage-color);content:""}
+.institution-organ-stage:after{position:absolute;top:12px;right:11px;width:7px;height:7px;border-radius:50%;background:var(--stage-color);box-shadow:0 0 0 3px var(--stage-tint);content:""}
+.institution-organ-stage .eyebrow{color:var(--stage-color);font-size:8px;letter-spacing:.07em}
+.institution-organ-stage strong{color:#173b3c;font:750 24px/1 Manrope,sans-serif;font-variant-numeric:tabular-nums}
+.institution-organ-stage small{color:#71827e;font-size:9px;line-height:1.3}
+.institution-organ-stage.review{--stage-color:#b57b24;--stage-tint:#fff4df}.institution-organ-stage.matching{--stage-color:#3479a5;--stage-tint:#e8f3fa}.institution-organ-stage.offers{--stage-color:#7859a6;--stage-tint:#f0eafa}.institution-organ-stage.procurement{--stage-color:#13877d;--stage-tint:#e4f5ef}.institution-organ-stage.completed{--stage-color:#23805a;--stage-tint:#e5f4eb}.institution-organ-stage.closed{--stage-color:#b65d64;--stage-tint:#fff0f0}
+.institution-organ-activity>.panel-heading{align-items:center;margin-bottom:12px}
+.institution-activity-count{padding:6px 10px;border:1px solid #dcebe4;border-radius:999px;background:#f3faf6;color:#28755f;font-size:10px;font-weight:700;white-space:nowrap}
+.institution-activity-list{position:relative;display:grid;gap:0;margin:0;padding:2px 0;list-style:none}
+.institution-activity-list:before{position:absolute;top:12px;bottom:12px;left:6px;width:1px;background:#dcebe5;content:""}
+.institution-activity-list li{position:relative;display:flex;align-items:flex-start;gap:14px;padding:10px 4px}
+.institution-activity-marker{z-index:1;flex:none;width:13px;height:13px;margin-top:2px;border:3px solid #fff;border-radius:50%;background:#118b7b;box-shadow:0 0 0 1px #b8ded2}
+.institution-activity-content{display:grid;gap:4px;min-width:0;flex:1}
+.institution-activity-content>div{display:flex;align-items:baseline;justify-content:space-between;gap:14px}
+.institution-activity-content strong{color:#25413f;font-size:11px;font-weight:650;text-transform:capitalize}
+.institution-activity-content time,.institution-activity-content small{color:#84938f;font-size:9px}
+.institution-activity-empty{padding:20px;border:1px dashed #dce9e3;border-radius:10px;background:#f9fcfa;color:#788984;font-size:11px;text-align:center}
+@media(max-width:850px){.institution-organ-stage-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(max-width:760px){.institution-organ-stage-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.institution-organ-stage{min-height:96px;padding:12px}}
+@media(max-width:480px){.institution-organ-analytics>.panel-heading,.institution-organ-activity>.panel-heading{align-items:flex-start;flex-direction:column;gap:12px}.institution-organ-stage-grid{grid-template-columns:1fr 1fr;gap:8px}.institution-organ-stage{min-height:92px;padding:11px}.institution-organ-stage strong{font-size:22px}.institution-activity-content>div{align-items:flex-start;flex-direction:column;gap:3px}}
+
+.organ-list-pagination{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:14px;padding-top:12px;border-top:1px solid #e8efec}
+.organ-list-pagination>small{color:#687d78;font-size:10px}
+.organ-list-pagination>small span{color:#91a19c}
+.organ-list-pagination>div{display:flex;gap:7px}
+.organ-list-pagination .button{min-height:32px;padding:6px 11px;font-size:10px}
+.organ-list-pagination .button:disabled{cursor:not-allowed;opacity:.48}
+@media(max-width:520px){.organ-list-pagination{align-items:flex-start;flex-direction:column}.organ-list-pagination>div{width:100%}.organ-list-pagination .button{flex:1}}
+.inventory-stock-pagination{display:flex;align-items:center;justify-content:space-between;gap:12px;padding-top:12px;border-top:1px solid #e8efec}
+.inventory-stock-pagination>small{color:#687d78;font-size:10px}
+.inventory-stock-pagination>small span{color:#91a19c}
+.inventory-stock-pagination>div{display:flex;gap:7px}
+.inventory-stock-pagination .button{min-height:32px;padding:6px 11px;font-size:10px}
+.inventory-stock-pagination .button:disabled{cursor:not-allowed;opacity:.48}
+@media(max-width:520px){.inventory-stock-pagination{align-items:flex-start;flex-direction:column}.inventory-stock-pagination>div{width:100%}.inventory-stock-pagination .button{flex:1}}

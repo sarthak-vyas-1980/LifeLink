@@ -16,15 +16,10 @@ async function requireOrganInstitution(institutionId: string) {
 	return institution;
 }
 
-async function notifyOrganService(tx: Prisma.TransactionClient, actorId: string, institutionId: string, eventType: string, title: string, reference: string) {
+async function notifyOrganService(tx: Prisma.TransactionClient, actorId: string, institutionId: string, eventType: string, title: string, reference: string, recipients: Array<{ institutionId?: string; userId?: string }>) {
 	const eventId = randomUUID();
 	await tx.workflowEvent.create({ data: { id: eventId, eventType, actorId, payload: { reference, institutionId } } });
-	const accounts = await tx.institutionAccount.findMany({ where: { institutionId }, select: { institutionId: true } });
-	const administrators = await tx.user.findMany({ where: { status: "ACTIVE", role: "ADMIN" }, select: { id: true } });
-	await tx.notification.createMany({ data: [
-		...accounts.map(({ institutionId: recipientInstitutionId }) => ({ institutionId: recipientInstitutionId })),
-		...administrators.map(({ id }) => ({ userId: id })),
-	].map((recipient) => ({ ...recipient, eventId, eventType, title, message: `A personal organ coordination submission (${reference}) is ready for professional review.`, payload: { reference }, type: NotificationType.IN_APP, status: NotificationStatus.UNREAD })), skipDuplicates: true });
+	if (recipients.length) await tx.notification.createMany({ data: recipients.map((recipient) => ({ ...recipient, eventId, eventType, title, message: `A personal organ coordination submission (${reference}) is ready for professional review.`, payload: { reference }, type: NotificationType.IN_APP, status: NotificationStatus.UNREAD })), skipDuplicates: true });
 }
 
 export async function getMyOrganDonor(actor: AuthContext) {
@@ -42,16 +37,21 @@ export async function createMyOrganDonor(actor: AuthContext, input: { institutio
 	const institution = await requireOrganInstitution(input.institutionId);
 	const active = await database.organDonor.findMany({ where: { userId, status: { in: [OrganDonorStatus.REGISTERED, OrganDonorStatus.ACTIVE] }, organType: { in: input.organTypes as never[] } }, select: { organType: true } });
 	if (active.length) throw new ApiError(409, "ACTIVE_DONATION_EXISTS", `An active ${active.map((item) => item.organType.toLowerCase().replaceAll("_", " ")).join(", ")} donation request already exists. Withdraw or complete it before creating another.`);
+	const [accounts, administrators] = await Promise.all([
+		database.institutionAccount.findMany({ where: { institutionId: institution.id }, select: { institutionId: true } }),
+		database.user.findMany({ where: { status: "ACTIVE", role: "ADMIN" }, select: { id: true } }),
+	]);
+	const reviewers = [...accounts.map(({ institutionId }) => ({ institutionId })), ...administrators.map(({ id }) => ({ userId: id }))];
 	try { return await database.$transaction(async (tx) => {
 		const donors = [];
 		for (const organType of input.organTypes) {
 			const donor = await tx.organDonor.create({ data: { reference: `DNR-${new Date().getUTCFullYear()}-${randomUUID().slice(0, 8).toUpperCase()}`, userId, institutionId: institution.id, donorType: input.donorType, organType: organType as never, bloodGroup: input.bloodGroup as never, consentStatus: ConsentStatus.PENDING, authorizationStatus: OrganAuthorizationStatus.PENDING, status: OrganDonorStatus.REGISTERED, consents: { create: { status: ConsentStatus.PENDING, consentType: input.donorType, notes: `User expressed interest in ${organType}. This is not verified consent; institutional review is required.` } } }, select: { id: true, reference: true, donorType: true, organType: true, bloodGroup: true, consentStatus: true, authorizationStatus: true, status: true, createdAt: true, institution: { select: { id: true, name: true } } } });
 			donors.push(donor);
 			await tx.auditLog.create({ data: { actorId: userId, action: "PERSONAL_ORGAN_DONOR_INTEREST_CREATED", entityType: "OrganDonor", entityId: donor.id, metadata: { reference: donor.reference, institutionId: institution.id, organType } } });
-			await notifyOrganService(tx, userId, institution.id, "PERSONAL_ORGAN_DONOR_INTEREST_CREATED", "Donor interest needs review", donor.reference);
+			await notifyOrganService(tx, userId, institution.id, "PERSONAL_ORGAN_DONOR_INTEREST_CREATED", "Donor interest needs review", donor.reference, reviewers);
 		}
 		return donors;
-	}); } catch (error) {
+	}, { maxWait: 10_000, timeout: 30_000 }); } catch (error) {
 		if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") throw new ApiError(409, "ACTIVE_DONATION_EXISTS", "An active donation request already exists for one of these organs.");
 		throw error;
 	}
@@ -59,8 +59,9 @@ export async function createMyOrganDonor(actor: AuthContext, input: { institutio
 
 export async function withdrawMyOrganDonorConsent(actor: AuthContext, donorId: string) {
 	const userId = requirePersonalUser(actor);
-	const donor = await database.organDonor.findFirst({ where: { id: donorId, userId }, select: { id: true, reference: true, institutionId: true, consentStatus: true } });
+	const donor = await database.organDonor.findFirst({ where: { id: donorId, userId }, select: { id: true, reference: true, institutionId: true, consentStatus: true, status: true } });
 	if (!donor) throw new ApiError(404, "DONOR_PROFILE_NOT_FOUND", "No donor interest is registered for this account.");
+	if (donor.status === OrganDonorStatus.FULFILLED) throw new ApiError(409, "DONOR_REQUEST_FULFILLED", "This donor request has been fulfilled and can no longer be withdrawn.");
 	if (donor.consentStatus === ConsentStatus.WITHDRAWN) return { withdrawn: true };
 	const withdrawableStatuses: ConsentStatus[] = [ConsentStatus.PENDING, ConsentStatus.ACCEPTED, ConsentStatus.RECORDED, ConsentStatus.VERIFIED];
 	if (!withdrawableStatuses.includes(donor.consentStatus)) throw new ApiError(409, "CONSENT_NOT_WITHDRAWABLE", "This donor record cannot currently be withdrawn.");
@@ -78,7 +79,7 @@ export async function withdrawMyOrganDonorConsent(actor: AuthContext, donorId: s
 
 export async function listMyOrganRecipients(actor: AuthContext) {
 	const userId = requirePersonalUser(actor);
-	return database.organRecipient.findMany({ where: { userId }, select: { id: true, reference: true, organType: true, bloodGroup: true, priority: true, status: true, registrationDate: true, updatedAt: true, institution: { select: { id: true, name: true } }, requirement: true, matches: { select: { status: true, coordinationScore: true, matchReasons: true, generatedAt: true, organ: { select: { reference: true, organType: true, status: true } } }, orderBy: { coordinationScore: "desc" } }, offers: { select: { reference: true, status: true, offeredAt: true, responseDeadline: true, organ: { select: { status: true, procurements: { select: { status: true } } } } } } }, orderBy: { registrationDate: "desc" } });
+	return database.organRecipient.findMany({ where: { userId }, select: { id: true, reference: true, organType: true, bloodGroup: true, priority: true, status: true, registrationDate: true, updatedAt: true, institution: { select: { id: true, name: true } }, requirement: true, matches: { select: { status: true, coordinationScore: true, matchReasons: true, generatedAt: true, organ: { select: { reference: true, organType: true, status: true } } }, orderBy: { coordinationScore: "desc" } }, offers: { select: { id: true, reference: true, status: true, offeredAt: true, responseDeadline: true, organ: { select: { status: true, procurements: { select: { status: true } } } } } } }, orderBy: { registrationDate: "desc" } });
 }
 
 export async function createMyOrganRecipient(actor: AuthContext, input: { institutionId: string; organType: string; bloodGroup?: string; priority?: RequestPriority; urgency?: string; requiredBy?: Date }) {
@@ -86,12 +87,17 @@ export async function createMyOrganRecipient(actor: AuthContext, input: { instit
 	const activelyDonated = await database.organDonor.findFirst({ where: { userId, organType: input.organType as never, status: { in: [OrganDonorStatus.REGISTERED, OrganDonorStatus.ACTIVE] } }, select: { reference: true } });
 	if (activelyDonated) throw new ApiError(409, "ACTIVE_DONATION_CONFLICT", `You have an active ${input.organType.toLowerCase().replaceAll("_", " ")} donation request (${activelyDonated.reference}). Withdraw or complete it before requesting to receive that organ.`);
 	const institution = await requireOrganInstitution(input.institutionId);
+	const [accounts, administrators] = await Promise.all([
+		database.institutionAccount.findMany({ where: { institutionId: institution.id }, select: { institutionId: true } }),
+		database.user.findMany({ where: { status: "ACTIVE", role: "ADMIN" }, select: { id: true } }),
+	]);
+	const reviewers = [...accounts.map(({ institutionId }) => ({ institutionId })), ...administrators.map(({ id }) => ({ userId: id }))];
 	return database.$transaction(async (tx) => {
 		const recipient = await tx.organRecipient.create({ data: { reference: `RCPT-${new Date().getUTCFullYear()}-${randomUUID().slice(0, 8).toUpperCase()}`, userId, institutionId: institution.id, organType: input.organType as never, bloodGroup: input.bloodGroup as never, priority: input.priority ?? RequestPriority.NORMAL, status: OrganRecipientStatus.PENDING_REVIEW, requirement: { create: { organType: input.organType as never, bloodGroup: input.bloodGroup as never, priority: input.priority ?? RequestPriority.NORMAL, urgency: input.urgency, requiredBy: input.requiredBy } } }, select: { id: true, reference: true, organType: true, bloodGroup: true, priority: true, status: true, registrationDate: true, institution: { select: { id: true, name: true } }, requirement: true } });
 		await tx.auditLog.create({ data: { actorId: userId, action: "PERSONAL_ORGAN_RECIPIENT_CREATED", entityType: "OrganRecipient", entityId: recipient.id, metadata: { reference: recipient.reference, institutionId: institution.id, organType: recipient.organType } } });
-		await notifyOrganService(tx, userId, institution.id, "PERSONAL_ORGAN_RECIPIENT_CREATED", "Recipient requirement needs review", recipient.reference);
+		await notifyOrganService(tx, userId, institution.id, "PERSONAL_ORGAN_RECIPIENT_CREATED", "Recipient requirement needs review", recipient.reference, reviewers);
 		return recipient;
-	});
+	}, { maxWait: 10_000, timeout: 30_000 });
 }
 
 export async function updateMyOrganRecipient(actor: AuthContext, recipientId: string, input: { organType?: string; bloodGroup?: string | null; priority?: RequestPriority; urgency?: string | null; requiredBy?: Date | null }) {

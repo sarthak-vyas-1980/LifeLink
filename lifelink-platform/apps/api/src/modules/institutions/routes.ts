@@ -1,4 +1,4 @@
-import { InstitutionStatus, InstitutionType } from "@prisma/client";
+import { InstitutionStatus, InstitutionType, OrganDonorStatus, OrganRecipientStatus, OrganStatus, RequestStatus, RequestType } from "@prisma/client";
 import { Router, type Request, type RequestHandler, type Response } from "express";
 import { searchInstitutions } from "@lifelink/database";
 import { database } from "@lifelink/database";
@@ -16,11 +16,77 @@ const discoveryQuery = z.object({
   if ((value.latitude === undefined) !== (value.longitude === undefined)) context.addIssue({ code: "custom", path: ["latitude"], message: "Both coordinates are required." });
   if (value.radiusKm !== undefined && value.latitude === undefined) context.addIssue({ code: "custom", path: ["radiusKm"], message: "Coordinates are required for radius filtering." });
 });
+const requestAnalyticsQuery = z.object({
+  range: z.enum(["7d", "30d", "90d", "365d"]).default("30d"),
+  status: z.enum(["ALL", "OPEN", "COMPLETED", "CLOSED"]).default("ALL"),
+  interval: z.enum(["DAY", "WEEK", "MONTH"]).default("DAY"),
+});
 
 export function registerInstitutionRoutes(router = Router()) {
   router.get("/me", authenticateRequest(), asyncRoute(getMyInstitution));
+  router.get("/me/request-analytics", authenticateRequest(), asyncRoute(getMyRequestAnalytics));
   router.get("/", authenticateRequest(), asyncRoute(discoverInstitutions));
   return router;
+}
+
+export async function getMyRequestAnalytics(request: Request, response: Response) {
+  const actor = request.auth!;
+  if (actor.principalType !== "INSTITUTION" || !actor.institutionId) throw new ApiError(403, "INSTITUTION_ACCOUNT_REQUIRED", "Sign in with an institution account to view its analytics.");
+  const parsed = requestAnalyticsQuery.safeParse(request.query);
+  if (!parsed.success) throw new ApiError(400, "VALIDATION_FAILED", "Request analytics filters are invalid.");
+
+  const { range, status, interval } = parsed.data;
+  const rangeDays = Number.parseInt(range, 10);
+  const to = new Date();
+  const from = new Date(to.getTime() - rangeDays * 24 * 60 * 60 * 1000);
+  const bloodStatuses = status === "OPEN"
+    ? [RequestStatus.CREATED, RequestStatus.UNDER_REVIEW, RequestStatus.SEARCHING_MATCHING, RequestStatus.INSTITUTIONS_NOTIFIED, RequestStatus.OFFERS_RECEIVED, RequestStatus.OFFER_EVALUATION, RequestStatus.OFFER_ACCEPTED, RequestStatus.RESERVED, RequestStatus.IN_TRANSIT, RequestStatus.REOPENED]
+    : status === "COMPLETED" ? [RequestStatus.FULFILLED]
+      : status === "CLOSED" ? [RequestStatus.CANCELLED, RequestStatus.REJECTED, RequestStatus.EXPIRED] : undefined;
+  const donorStatuses = status === "OPEN" ? [OrganDonorStatus.REGISTERED, OrganDonorStatus.ACTIVE]
+    : status === "COMPLETED" ? [OrganDonorStatus.FULFILLED]
+      : status === "CLOSED" ? [OrganDonorStatus.CLOSED] : undefined;
+  const recipientStatuses = status === "OPEN" ? [OrganRecipientStatus.PENDING_REVIEW, OrganRecipientStatus.ACTIVE, OrganRecipientStatus.MATCHED]
+    : status === "CLOSED" ? [OrganRecipientStatus.CLOSED, OrganRecipientStatus.REJECTED, OrganRecipientStatus.CANCELLED] : undefined;
+
+  const [bloodRequests, donors, recipients, completedRecipients] = await Promise.all([
+    database.request.findMany({
+      where: { requestType: RequestType.BLOOD, requestDate: { gte: from, lte: to }, OR: [{ createdByInstitutionId: actor.institutionId }, { matches: { some: { providerInstitutionId: actor.institutionId } } }], ...(bloodStatuses ? { status: { in: bloodStatuses } } : {}) },
+      select: { requestDate: true },
+    }),
+    database.organDonor.findMany({ where: { institutionId: actor.institutionId, createdAt: { gte: from, lte: to }, ...(donorStatuses ? { status: { in: donorStatuses } } : {}) }, select: { createdAt: true } }),
+    status === "COMPLETED" ? Promise.resolve([] as Array<{ createdAt: Date }>) : database.organRecipient.findMany({ where: { institutionId: actor.institutionId, createdAt: { gte: from, lte: to }, ...(recipientStatuses ? { status: { in: recipientStatuses } } : {}) }, select: { createdAt: true } }),
+    status === "COMPLETED" ? database.organRecipient.findMany({ where: { institutionId: actor.institutionId, createdAt: { gte: from, lte: to }, organs: { some: { status: { in: [OrganStatus.TRANSPLANTED, OrganStatus.COMPLETED] } } } }, select: { createdAt: true } }) : Promise.resolve([]),
+  ]);
+
+  const bucketDate = (value: Date) => {
+    const bucket = new Date(value);
+    bucket.setUTCHours(0, 0, 0, 0);
+    if (interval === "WEEK") bucket.setUTCDate(bucket.getUTCDate() - ((bucket.getUTCDay() + 6) % 7));
+    if (interval === "MONTH") bucket.setUTCDate(1);
+    return bucket;
+  };
+  const buckets = new Map<string, { blood: number; organ: number }>();
+  const firstBucket = bucketDate(from);
+  const lastBucket = bucketDate(to);
+  const cursor = new Date(firstBucket);
+  while (cursor <= lastBucket) {
+    buckets.set(cursor.toISOString().slice(0, 10), { blood: 0, organ: 0 });
+    if (interval === "DAY") cursor.setUTCDate(cursor.getUTCDate() + 1);
+    else if (interval === "WEEK") cursor.setUTCDate(cursor.getUTCDate() + 7);
+    else cursor.setUTCMonth(cursor.getUTCMonth() + 1);
+  }
+  const addCount = (createdAt: Date, key: "blood" | "organ") => {
+    const bucketKey = bucketDate(createdAt).toISOString().slice(0, 10);
+    const bucket = buckets.get(bucketKey);
+    if (bucket) bucket[key] += 1;
+  };
+  bloodRequests.forEach(({ requestDate }) => addCount(requestDate, "blood"));
+  donors.forEach(({ createdAt }) => addCount(createdAt, "organ"));
+  recipients.forEach(({ createdAt }) => addCount(createdAt, "organ"));
+  completedRecipients.forEach(({ createdAt }) => addCount(createdAt, "organ"));
+
+  response.json({ range, status, interval, from: from.toISOString(), to: to.toISOString(), series: [...buckets].map(([date, counts]) => ({ date, ...counts, total: counts.blood + counts.organ })) });
 }
 
 export async function getMyInstitution(request: Request, response: Response) {

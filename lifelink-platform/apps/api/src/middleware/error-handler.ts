@@ -54,6 +54,9 @@ export function mapRequestError(error: unknown): SafeError {
     if (["P1000", "P1001", "P1002", "P1017"].includes(code)) {
       return { status: 503, code: "DATABASE_UNAVAILABLE", message: "The database is temporarily unavailable. Please try again shortly." };
     }
+    if (code === "P2028") {
+      return { status: 503, code: "DATABASE_TRANSACTION_TIMEOUT", message: "The submission took too long to process. Please try again; no partial request was saved." };
+    }
     if (code === "P2021" || code === "P2022") {
       return { status: 503, code: "DATABASE_SCHEMA_OUT_OF_SYNC", message: "The database schema is behind this application. Apply pending Prisma migrations, then restart the API." };
     }

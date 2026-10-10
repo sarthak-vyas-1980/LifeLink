@@ -21,18 +21,21 @@ import type { AuthContext } from "../../middleware/auth";
 import { ApiError } from "../../middleware/api-error";
 import { calculateDistance } from "../maps/geospatial.service";
 
-import { ACTIVE_OFFER_STATUSES, addEvent, assertInstitution, requireInstitution, isOrganTransitionAllowed } from '../organ-coordination/shared';
+import { ACTIVE_OFFER_STATUSES, addEvent, assertInstitution, findPreservationPolicy, requireInstitution, isOrganTransitionAllowed } from '../organ-coordination/shared';
 import { calculatePreservationClock } from './organ-preservation.service';
 
 export async function createOrganRecord(actor: AuthContext, input: { organType: OrganType; donorId: string; institutionId?: string; bloodGroup?: string; notes?: string }) {
-	const institutionId = requireInstitution(actor) ?? input.institutionId;
-	if (!institutionId) throw new ApiError(400, "INSTITUTION_REQUIRED", "An organ centre is required.");
+	const donor = await database.organDonor.findUnique({ where: { id: input.donorId }, select: { id: true, institutionId: true, organType: true, consentStatus: true, authorizationStatus: true, organs: { select: { id: true } } } });
+	if (!donor) throw new ApiError(404, "DONOR_NOT_FOUND", "Donor record not found.");
+	const actorInstitutionId = actor.role === "ADMINISTRATOR" ? undefined : requireInstitution(actor);
+	const institutionId = actorInstitutionId ?? input.institutionId ?? donor.institutionId;
+	if (donor.institutionId !== institutionId || input.institutionId && input.institutionId !== donor.institutionId) throw new ApiError(404, "DONOR_NOT_FOUND", "Donor record not found.");
 	await assertInstitution(actor, institutionId);
-	const donor = await database.organDonor.findUnique({ where: { id: input.donorId }, select: { id: true, institutionId: true, consentStatus: true, authorizationStatus: true } });
-	if (!donor || donor.institutionId !== institutionId) throw new ApiError(404, "DONOR_NOT_FOUND", "Donor record not found.");
 	if (donor.consentStatus !== ConsentStatus.VERIFIED || donor.authorizationStatus !== OrganAuthorizationStatus.AUTHORIZED) throw new ApiError(409, "DONOR_NOT_AUTHORIZED", "Verified donor authorization is required.");
+	if (donor.organType !== input.organType) throw new ApiError(409, "ORGAN_TYPE_MISMATCH", "The organ case must match the donor's authorized organ interest.");
+	if (donor.organs.length > 0) throw new ApiError(409, "ORGAN_CASE_EXISTS", "An organ case is already registered for this donor record.");
 	return database.$transaction(async (tx) => {
-		const organ = await tx.organRecord.create({ data: { reference: `ORG-${input.organType.slice(0, 3)}-${randomUUID().slice(0, 8).toUpperCase()}`, institutionId, currentLocationId: institutionId, donorId: donor.id, organType: input.organType, bloodGroup: input.bloodGroup as never, status: OrganStatus.ASSESSMENT_PENDING, notes: input.notes } });
+		const organ = await tx.organRecord.create({ data: { reference: `ORG-${input.organType.slice(0, 3)}-${randomUUID().slice(0, 8).toUpperCase()}`, institutionId, donorId: donor.id, organType: input.organType, bloodGroup: input.bloodGroup as never, status: OrganStatus.ASSESSMENT_PENDING, notes: input.notes } });
 		await addEvent(tx, { organId: organ.id, actor, eventType: "ORGAN_CREATED", toStatus: organ.status, metadata: { reference: organ.reference } });
 		await tx.auditLog.create({ data: { actorId: actor.userId, actorInstitutionId: actor.institutionId, action: "ORGAN_CREATED", entityType: "OrganRecord", entityId: organ.id, metadata: { reference: organ.reference, organType: organ.organType } } });
 		return organ;
@@ -50,20 +53,33 @@ export async function updateOrganRecord(actor: AuthContext, organId: string, inp
 	});
 }
 export async function transitionOrgan(actor: AuthContext, organId: string, toStatus: OrganStatus) {
-	const organ = await database.organRecord.findUnique({ where: { id: organId }, select: { id: true, institutionId: true, donorId: true, status: true, reference: true, destinationCentreId: true } });
+	const organ = await database.organRecord.findUnique({ where: { id: organId }, select: { id: true, institutionId: true, donorId: true, donor: { select: { donorType: true } }, status: true, reference: true, transplantScheduledAt: true, organType: true, preservationMethod: true, preservationStartTime: true } });
 	if (!organ) throw new ApiError(404, "ORGAN_NOT_FOUND", "Organ record not found.");
 	await assertInstitution(actor, organ.institutionId);
 	if (new Set<OrganStatus>([OrganStatus.MATCHING, OrganStatus.OFFERED, OrganStatus.ACCEPTED]).has(toStatus)) throw new ApiError(409, "COORDINATION_ACTION_REQUIRED", "Matching, offer creation, and offer acceptance must use their dedicated workflow actions.");
 	if (new Set<OrganStatus>([OrganStatus.RETRIEVAL_SCHEDULED, OrganStatus.RETRIEVAL_IN_PROGRESS, OrganStatus.RETRIEVED]).has(toStatus)) throw new ApiError(409, "PROCUREMENT_WORKFLOW_REQUIRED", "Retrieval states can only be advanced through the procurement workflow.");
+	if (toStatus === OrganStatus.PRESERVING) throw new ApiError(409, "PRESERVATION_WORKFLOW_REQUIRED", "Start the preservation timer to record the storage method and timeline.");
+	if (organ.status === OrganStatus.RETRIEVED && toStatus === OrganStatus.FINAL_ASSESSMENT && organ.donor.donorType === "POSTHUMOUS_INTENT") throw new ApiError(409, "PRESERVATION_REQUIRED", "Posthumous organ cases must start preservation before they can continue to assessment or matching.");
+	if (toStatus === OrganStatus.TRANSPLANTED) {
+		if (!organ.transplantScheduledAt) throw new ApiError(409, "TRANSPLANT_NOT_SCHEDULED", "Schedule the transplant before recording its completion.");
+		if (organ.donor.donorType === "POSTHUMOUS_INTENT") {
+			const policy = organ.preservationMethod ? await findPreservationPolicy(organ.organType, organ.preservationMethod, organ.institutionId) : null;
+			if (!policy || calculatePreservationClock({ start: organ.preservationStartTime, maximumHours: policy.maximumHours, warningHours: policy.warningHours, criticalHours: policy.criticalHours }).status === PreservationStatus.EXPIRED) throw new ApiError(409, "PRESERVATION_EXPIRED", "The posthumous organ's configured preservation timeline has ended.");
+		}
+	}
+	if (toStatus === OrganStatus.FINAL_ASSESSMENT || toStatus === OrganStatus.ALLOCATED || toStatus === OrganStatus.TRANSPLANTED || toStatus === OrganStatus.COMPLETED) {
+		const acceptedOffer = await database.organOffer.findFirst({ where: { organId, status: OrganOfferStatus.ACCEPTED }, select: { id: true } });
+		if (!acceptedOffer) throw new ApiError(409, "ACCEPTED_OFFER_REQUIRED", "Recipient acceptance is required before transplant coordination can proceed.");
+	}
 	if (!isOrganTransitionAllowed(organ.status, toStatus)) throw new ApiError(409, "INVALID_ORGAN_TRANSITION", "The requested organ workflow transition is not allowed.");
 	return database.$transaction(async (tx) => {
-		const updated = await tx.organRecord.update({ where: { id: organ.id }, data: { status: toStatus } });
-		if (new Set<OrganStatus>([OrganStatus.COMPLETED, OrganStatus.CANCELLED, OrganStatus.EXPIRED, OrganStatus.DISCARDED]).has(toStatus)) {
-			const otherActiveOrgans = await tx.organRecord.count({ where: { donorId: organ.donorId, id: { not: organ.id }, status: { notIn: [OrganStatus.COMPLETED, OrganStatus.CANCELLED, OrganStatus.EXPIRED, OrganStatus.DISCARDED, OrganStatus.UNAVAILABLE] } } });
-			if (!otherActiveOrgans) await tx.organDonor.updateMany({ where: { id: organ.donorId, status: { in: ["REGISTERED", "ACTIVE"] } }, data: { status: "CLOSED" } });
+		const updated = await tx.organRecord.update({ where: { id: organ.id }, data: { status: toStatus, transplantCompletedAt: toStatus === OrganStatus.TRANSPLANTED ? new Date() : undefined } });
+		if (new Set<OrganStatus>([OrganStatus.TRANSPLANTED, OrganStatus.COMPLETED, OrganStatus.CANCELLED, OrganStatus.EXPIRED, OrganStatus.DISCARDED]).has(toStatus)) {
+			const otherActiveOrgans = await tx.organRecord.count({ where: { donorId: organ.donorId, id: { not: organ.id }, status: { notIn: [OrganStatus.TRANSPLANTED, OrganStatus.COMPLETED, OrganStatus.CANCELLED, OrganStatus.EXPIRED, OrganStatus.DISCARDED, OrganStatus.UNAVAILABLE] } } });
+			if (!otherActiveOrgans) await tx.organDonor.updateMany({ where: { id: organ.donorId, status: { in: [OrganDonorStatus.REGISTERED, OrganDonorStatus.ACTIVE] } }, data: { status: toStatus === OrganStatus.TRANSPLANTED || toStatus === OrganStatus.COMPLETED ? OrganDonorStatus.FULFILLED : OrganDonorStatus.CLOSED } });
 		}
 		const acceptedOffer = await tx.organOffer.findFirst({ where: { organId, status: OrganOfferStatus.ACCEPTED }, select: { recipientId: true } });
-		if (acceptedOffer && (toStatus === OrganStatus.TRANSPLANTED || toStatus === OrganStatus.COMPLETED)) await tx.organRecipient.updateMany({ where: { id: acceptedOffer.recipientId, status: OrganRecipientStatus.MATCHED }, data: { status: OrganRecipientStatus.CLOSED } });
+		if (acceptedOffer && (toStatus === OrganStatus.TRANSPLANTED || toStatus === OrganStatus.COMPLETED)) await tx.organRecipient.updateMany({ where: { id: acceptedOffer.recipientId, status: { in: [OrganRecipientStatus.ACTIVE, OrganRecipientStatus.MATCHED] } }, data: { status: OrganRecipientStatus.CLOSED } });
 		if (acceptedOffer && (toStatus === OrganStatus.CANCELLED || toStatus === OrganStatus.UNAVAILABLE)) await tx.organRecipient.updateMany({ where: { id: acceptedOffer.recipientId, status: OrganRecipientStatus.MATCHED }, data: { status: OrganRecipientStatus.ACTIVE } });
 		await addEvent(tx, { organId, actor, eventType: "ORGAN_STATUS_CHANGED", fromStatus: organ.status, toStatus, metadata: { reference: organ.reference } });
 		await tx.auditLog.create({ data: { actorId: actor.userId, actorInstitutionId: actor.institutionId, action: "ORGAN_STATUS_CHANGED", entityType: "OrganRecord", entityId: organ.id, metadata: { fromStatus: organ.status, toStatus } } });
@@ -72,7 +88,7 @@ export async function transitionOrgan(actor: AuthContext, organId: string, toSta
 }
 export async function listOrgans(actor: AuthContext, filters: { q?: string; status?: string; organType?: string; bloodGroup?: string; institutionId?: string; preservationStatus?: PreservationStatus; createdFrom?: Date; createdTo?: Date; page?: number; pageSize?: number } = {}) {
 	const institutionId = actor.role === "ADMINISTRATOR" ? undefined : requireInstitution(actor);
-	const scope: Prisma.OrganRecordWhereInput = institutionId ? { OR: [{ institutionId }, { destinationCentreId: institutionId }] } : {};
+	const scope: Prisma.OrganRecordWhereInput = institutionId ? { institutionId } : {};
 	if (filters.institutionId && institutionId && filters.institutionId !== institutionId) throw new ApiError(403, "INSTITUTION_SCOPE_VIOLATION", "You may only filter records within your institution scope.");
 	const clauses: Prisma.OrganRecordWhereInput[] = [scope];
 	if (filters.institutionId) clauses.push({ institutionId: filters.institutionId });
@@ -84,7 +100,7 @@ export async function listOrgans(actor: AuthContext, filters: { q?: string; stat
 	if (filters.q) clauses.push({ OR: [{ reference: { contains: filters.q, mode: "insensitive" as const } }, { donor: { reference: { contains: filters.q, mode: "insensitive" as const } } }] });
 	const where: Prisma.OrganRecordWhereInput = { AND: clauses };
 	const page = filters.page ?? 1; const pageSize = filters.pageSize ?? 25;
-	const include = { donor: { select: { id: true, reference: true, consentStatus: true, authorizationStatus: true } }, currentLocation: { select: { id: true, name: true } }, destinationCentre: { select: { id: true, name: true } }, institution: { select: { id: true, name: true } }, offers: { select: { id: true, status: true, responseDeadline: true } }, events: { orderBy: { createdAt: "asc" as const } } };
+	const include = { donor: { select: { id: true, reference: true, donorType: true, consentStatus: true, authorizationStatus: true } }, institution: { select: { id: true, name: true } }, offers: { select: { id: true, status: true, responseDeadline: true, recipient: { select: { reference: true } } } }, events: { orderBy: { createdAt: "asc" as const } } };
 	if (filters.preservationStatus && filters.preservationStatus !== PreservationStatus.NOT_STARTED) {
 		const candidates = await database.organRecord.findMany({ where, include, orderBy: { updatedAt: "desc" } });
 		const filtered = (await attachPreservationClocks(candidates)).filter((record) => record.preservation.status === filters.preservationStatus);
@@ -95,9 +111,31 @@ export async function listOrgans(actor: AuthContext, filters: { q?: string; stat
 	return { organs: await attachPreservationClocks(records), pagination: { page, pageSize, total, totalPages: Math.ceil(total / pageSize) } };
 }
 
+export async function getOrganInventorySummary(actor: AuthContext) {
+	const institutionId = actor.role === "ADMINISTRATOR" ? undefined : requireInstitution(actor);
+	const stock = await database.organRecord.findMany({
+			where: {
+				...(institutionId ? { institutionId } : {}),
+				donor: { donorType: "POSTHUMOUS_INTENT" },
+				retrievalTime: { not: null },
+				status: { notIn: [OrganStatus.TRANSPLANTED, OrganStatus.COMPLETED, OrganStatus.UNAVAILABLE, OrganStatus.DISCARDED, OrganStatus.CANCELLED] },
+			},
+			select: { id: true, reference: true, organType: true, institutionId: true, status: true, retrievalTime: true, preservationMethod: true, preservationStartTime: true, donor: { select: { id: true, reference: true } } },
+		});
+	const stockWithClocks = await attachPreservationClocks(stock);
+	const organTypes = Object.values(OrganType);
+	return {
+		stock: organTypes.map((organType) => {
+			const organs = stockWithClocks.filter((organ) => organ.organType === organType);
+			return { organType, quantity: organs.length, organs: organs.map(({ id, reference, status, retrievalTime, preservationMethod, preservationStartTime, donor, preservation }) => ({ id, reference, status, retrievalTime, preservationStartTime, preservationMethod, donor, maximumHours: "maximumHours" in preservation ? preservation.maximumHours : null, warningHours: "warningHours" in preservation ? preservation.warningHours : null, criticalHours: "criticalHours" in preservation ? preservation.criticalHours : null, remainingMs: preservation.remainingMs, preservationStatus: preservation.status })) };
+		}),
+		disclaimer: "Operational timing only; clinical suitability is determined by authorized professionals.",
+	};
+}
+
 export async function getOrganDashboardMetrics(actor: AuthContext) {
 	const institutionId = actor.role === "ADMINISTRATOR" ? undefined : requireInstitution(actor);
-	const organWhere: Prisma.OrganRecordWhereInput = institutionId ? { OR: [{ institutionId }, { destinationCentreId: institutionId }] } : {};
+	const organWhere: Prisma.OrganRecordWhereInput = institutionId ? { institutionId } : {};
 	const offerWhere = institutionId ? { OR: [{ offeringCentreId: institutionId }, { receivingCentreId: institutionId }] } : {};
 	const procurementWhere = institutionId ? { procurementCentreId: institutionId } : {};
 	const donorWhere = institutionId ? { institutionId } : undefined;
@@ -156,9 +194,9 @@ async function attachPreservationClocks<T extends { id: string; organType: Organ
 	});
 }
 export async function getOrganDetail(actor: AuthContext, organId: string) {
-	const organ = await database.organRecord.findUnique({ where: { id: organId }, include: { donor: { select: { id: true, reference: true, consentStatus: true, authorizationStatus: true, status: true } }, institution: { select: { id: true, name: true } }, currentLocation: { select: { id: true, name: true } }, destinationCentre: { select: { id: true, name: true } }, matches: { include: { recipient: { select: { id: true, reference: true, organType: true, bloodGroup: true, priority: true, institution: { select: { name: true } } } } }, orderBy: { coordinationScore: "desc" } }, offers: { orderBy: { createdAt: "desc" } }, procurements: { orderBy: { createdAt: "desc" } }, events: { orderBy: { createdAt: "asc" } } } });
+	const organ = await database.organRecord.findUnique({ where: { id: organId }, include: { donor: { select: { id: true, reference: true, donorType: true, consentStatus: true, authorizationStatus: true, status: true } }, institution: { select: { id: true, name: true } }, matches: { include: { recipient: { select: { id: true, reference: true, organType: true, bloodGroup: true, priority: true, institution: { select: { name: true } } } } }, orderBy: { coordinationScore: "desc" } }, offers: { orderBy: { createdAt: "desc" } }, procurements: { orderBy: { createdAt: "desc" } }, events: { orderBy: { createdAt: "asc" } } } });
 	if (!organ) throw new ApiError(404, "ORGAN_NOT_FOUND", "Organ record not found.");
-	if (actor.role !== "ADMINISTRATOR" && actor.institutionId !== organ.institutionId && actor.institutionId !== organ.destinationCentreId) throw new ApiError(404, "ORGAN_NOT_FOUND", "Organ record not found.");
+	if (actor.role !== "ADMINISTRATOR" && actor.institutionId !== organ.institutionId) throw new ApiError(404, "ORGAN_NOT_FOUND", "Organ record not found.");
 	const [withClock] = await attachPreservationClocks([organ]);
 	return withClock;
 }
