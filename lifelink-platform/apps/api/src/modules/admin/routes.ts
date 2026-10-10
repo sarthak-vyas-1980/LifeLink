@@ -1,4 +1,4 @@
-import { InstitutionStatus } from "@prisma/client";
+import { InstitutionStatus, RequestStatus, RequestType } from "@prisma/client";
 import { Router, type Request, type RequestHandler, type Response } from "express";
 import { database } from "@lifelink/database";
 import { ApiError } from "../../middleware/api-error";
@@ -32,11 +32,24 @@ export function registerAdminRoutes(router = Router()) {
       database.organProcurement.groupBy({ by: ["procurementCentreId", "status"], _count: { _all: true } }),
       database.auditLog.findMany({ where: { entityType: { in: ["Institution", "OrganDonor", "OrganRecipient", "OrganRecord", "OrganConsent", "OrganMatch", "OrganOffer", "OrganProcurement"] } }, orderBy: { createdAt: "desc" }, take: 5, select: { id: true, actorId: true, actorInstitutionId: true, action: true, entityType: true, entityId: true, metadata: true, createdAt: true } }),
     ]);
+    const institutionIds = institutions.map(({ id }) => id);
+    const bloodRequests = institutionIds.length ? await database.request.findMany({ where: { requestType: RequestType.BLOOD, OR: [{ createdByInstitutionId: { in: institutionIds } }, { matches: { some: { providerInstitutionId: { in: institutionIds } } } }] }, select: { status: true, createdByInstitutionId: true, matches: { select: { providerInstitutionId: true } } } }) : [];
+    const bloodMetrics = new Map(institutionIds.map((id) => [id, { total: 0, fulfilled: 0 }]));
+    for (const request of bloodRequests) {
+      const associatedInstitutions = new Set([request.createdByInstitutionId, ...request.matches.map(({ providerInstitutionId }) => providerInstitutionId)].filter((id): id is string => Boolean(id && bloodMetrics.has(id))));
+      for (const id of associatedInstitutions) {
+        const metric = bloodMetrics.get(id)!;
+        metric.total += 1;
+        if (request.status === RequestStatus.FULFILLED) metric.fulfilled += 1;
+      }
+    }
     const counts = (rows: Array<{ institutionId?: string; offeringCentreId?: string; procurementCentreId?: string; status: string; _count: { _all: number } }>, id: string, field: "institutionId" | "offeringCentreId" | "procurementCentreId") => rows.filter((row) => row[field] === id).reduce<Record<string, number>>((result, row) => { result[row.status] = row._count._all; return result; }, {});
     res.json({ institutions: institutions.map((institution) => {
       const donors = counts(donorCounts, institution.id, "institutionId"); const authorizations = counts(donorAuthorizations.map(({ authorizationStatus, ...row }) => ({ ...row, status: authorizationStatus })), institution.id, "institutionId"); const recipients = counts(recipientCounts, institution.id, "institutionId"); const organs = counts(organStatuses, institution.id, "institutionId"); const institutionOffers = counts(offers, institution.id, "offeringCentreId"); const institutionProcurements = counts(procurements, institution.id, "procurementCentreId");
-      const totalRequests = institution._count.organDonors + institution._count.organRecipients; const completed = (organs.COMPLETED ?? 0) + (organs.TRANSPLANTED ?? 0); const organCount = institution._count.organRecords;
-      return { ...institution, analytics: { donorRequests: institution._count.organDonors, recipientRequests: institution._count.organRecipients, handledRequests: totalRequests, activeRequests: (donors.REGISTERED ?? 0) + (donors.ACTIVE ?? 0) + (recipients.PENDING_REVIEW ?? 0) + (recipients.ACTIVE ?? 0) + (recipients.MATCHED ?? 0), completed, cancelled: (recipients.CANCELLED ?? 0) + (organs.CANCELLED ?? 0), expired: (organs.EXPIRED ?? 0), rejected: (authorizations.REJECTED ?? 0) + (recipients.REJECTED ?? 0), matchingVolume: organs.MATCHING ?? 0, offerVolume: Object.values(institutionOffers).reduce((a, b) => a + b, 0), acceptedOffers: institutionOffers.ACCEPTED ?? 0, procurementVolume: Object.values(institutionProcurements).reduce((a, b) => a + b, 0), completionRate: organCount ? Math.round(completed * 100 / organCount) : 0, backlog: (donors.REGISTERED ?? 0) + (recipients.PENDING_REVIEW ?? 0), recentActivityCount: institution._count.organWorkflowEvents } };
+      const totalRequests = institution._count.organDonors + institution._count.organRecipients; const completed = (organs.COMPLETED ?? 0) + (organs.TRANSPLANTED ?? 0);
+      const fulfilledRequests = (donors.FULFILLED ?? 0) + (recipients.CLOSED ?? 0);
+      const blood = bloodMetrics.get(institution.id) ?? { total: 0, fulfilled: 0 };
+      return { ...institution, analytics: { donorRequests: institution._count.organDonors, recipientRequests: institution._count.organRecipients, handledRequests: totalRequests, fulfilledRequests, completionRate: totalRequests ? Math.round(fulfilledRequests * 100 / totalRequests) : 0, bloodRequests: blood.total, bloodFulfilledRequests: blood.fulfilled, bloodCompletionRate: blood.total ? Math.round(blood.fulfilled * 100 / blood.total) : 0, activeRequests: (donors.REGISTERED ?? 0) + (donors.ACTIVE ?? 0) + (recipients.PENDING_REVIEW ?? 0) + (recipients.ACTIVE ?? 0) + (recipients.MATCHED ?? 0), completed, cancelled: (recipients.CANCELLED ?? 0) + (organs.CANCELLED ?? 0), expired: (organs.EXPIRED ?? 0), rejected: (authorizations.REJECTED ?? 0) + (recipients.REJECTED ?? 0), matchingVolume: organs.MATCHING ?? 0, offerVolume: Object.values(institutionOffers).reduce((a, b) => a + b, 0), acceptedOffers: institutionOffers.ACCEPTED ?? 0, procurementVolume: Object.values(institutionProcurements).reduce((a, b) => a + b, 0), backlog: (donors.REGISTERED ?? 0) + (recipients.PENDING_REVIEW ?? 0), recentActivityCount: institution._count.organWorkflowEvents } };
     }), institutionStatus: Object.fromEntries(institutionStatus.map(({ status, _count }) => [status, _count._all])), organMetrics, activity });
   }));
   router.patch("/institutions/:institutionId/status", validateUuidParams("institutionId"), asyncRoute(async (req, res) => {

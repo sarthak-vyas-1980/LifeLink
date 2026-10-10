@@ -1,4 +1,4 @@
-import { InstitutionStatus, InstitutionType, OrganDonorStatus, OrganRecipientStatus, OrganStatus, RequestStatus, RequestType } from "@prisma/client";
+import { InstitutionStatus, InstitutionType, OrganDonorStatus, OrganRecipientStatus, RequestStatus, RequestType } from "@prisma/client";
 import { Router, type Request, type RequestHandler, type Response } from "express";
 import { searchInstitutions } from "@lifelink/database";
 import { database } from "@lifelink/database";
@@ -47,16 +47,16 @@ export async function getMyRequestAnalytics(request: Request, response: Response
     : status === "COMPLETED" ? [OrganDonorStatus.FULFILLED]
       : status === "CLOSED" ? [OrganDonorStatus.CLOSED] : undefined;
   const recipientStatuses = status === "OPEN" ? [OrganRecipientStatus.PENDING_REVIEW, OrganRecipientStatus.ACTIVE, OrganRecipientStatus.MATCHED]
-    : status === "CLOSED" ? [OrganRecipientStatus.CLOSED, OrganRecipientStatus.REJECTED, OrganRecipientStatus.CANCELLED] : undefined;
+    : status === "COMPLETED" ? [OrganRecipientStatus.CLOSED]
+      : status === "CLOSED" ? [OrganRecipientStatus.REJECTED, OrganRecipientStatus.CANCELLED] : undefined;
 
-  const [bloodRequests, donors, recipients, completedRecipients] = await Promise.all([
+  const [bloodRequests, donors, recipients] = await Promise.all([
     database.request.findMany({
       where: { requestType: RequestType.BLOOD, requestDate: { gte: from, lte: to }, OR: [{ createdByInstitutionId: actor.institutionId }, { matches: { some: { providerInstitutionId: actor.institutionId } } }], ...(bloodStatuses ? { status: { in: bloodStatuses } } : {}) },
-      select: { requestDate: true },
+      select: { requestDate: true, status: true },
     }),
-    database.organDonor.findMany({ where: { institutionId: actor.institutionId, createdAt: { gte: from, lte: to }, ...(donorStatuses ? { status: { in: donorStatuses } } : {}) }, select: { createdAt: true } }),
-    status === "COMPLETED" ? Promise.resolve([] as Array<{ createdAt: Date }>) : database.organRecipient.findMany({ where: { institutionId: actor.institutionId, createdAt: { gte: from, lte: to }, ...(recipientStatuses ? { status: { in: recipientStatuses } } : {}) }, select: { createdAt: true } }),
-    status === "COMPLETED" ? database.organRecipient.findMany({ where: { institutionId: actor.institutionId, createdAt: { gte: from, lte: to }, organs: { some: { status: { in: [OrganStatus.TRANSPLANTED, OrganStatus.COMPLETED] } } } }, select: { createdAt: true } }) : Promise.resolve([]),
+    database.organDonor.findMany({ where: { institutionId: actor.institutionId, createdAt: { gte: from, lte: to }, ...(donorStatuses ? { status: { in: donorStatuses } } : {}) }, select: { createdAt: true, status: true } }),
+    database.organRecipient.findMany({ where: { institutionId: actor.institutionId, createdAt: { gte: from, lte: to }, ...(recipientStatuses ? { status: { in: recipientStatuses } } : {}) }, select: { createdAt: true, status: true } }),
   ]);
 
   const bucketDate = (value: Date) => {
@@ -66,27 +66,29 @@ export async function getMyRequestAnalytics(request: Request, response: Response
     if (interval === "MONTH") bucket.setUTCDate(1);
     return bucket;
   };
-  const buckets = new Map<string, { blood: number; organ: number }>();
+  const buckets = new Map<string, { bloodTotal: number; bloodFulfilled: number; organTotal: number; organFulfilled: number }>();
   const firstBucket = bucketDate(from);
   const lastBucket = bucketDate(to);
   const cursor = new Date(firstBucket);
   while (cursor <= lastBucket) {
-    buckets.set(cursor.toISOString().slice(0, 10), { blood: 0, organ: 0 });
+    buckets.set(cursor.toISOString().slice(0, 10), { bloodTotal: 0, bloodFulfilled: 0, organTotal: 0, organFulfilled: 0 });
     if (interval === "DAY") cursor.setUTCDate(cursor.getUTCDate() + 1);
     else if (interval === "WEEK") cursor.setUTCDate(cursor.getUTCDate() + 7);
     else cursor.setUTCMonth(cursor.getUTCMonth() + 1);
   }
-  const addCount = (createdAt: Date, key: "blood" | "organ") => {
+  const addCount = (createdAt: Date, key: "blood" | "organ", fulfilled: boolean) => {
     const bucketKey = bucketDate(createdAt).toISOString().slice(0, 10);
     const bucket = buckets.get(bucketKey);
-    if (bucket) bucket[key] += 1;
+    if (!bucket) return;
+    bucket[`${key}Total`] += 1;
+    if (fulfilled) bucket[`${key}Fulfilled`] += 1;
   };
-  bloodRequests.forEach(({ requestDate }) => addCount(requestDate, "blood"));
-  donors.forEach(({ createdAt }) => addCount(createdAt, "organ"));
-  recipients.forEach(({ createdAt }) => addCount(createdAt, "organ"));
-  completedRecipients.forEach(({ createdAt }) => addCount(createdAt, "organ"));
+  bloodRequests.forEach(({ requestDate, status: requestStatus }) => addCount(requestDate, "blood", requestStatus === RequestStatus.FULFILLED));
+  donors.forEach(({ createdAt, status: donorStatus }) => addCount(createdAt, "organ", donorStatus === OrganDonorStatus.FULFILLED));
+  recipients.forEach(({ createdAt, status: recipientStatus }) => addCount(createdAt, "organ", recipientStatus === OrganRecipientStatus.CLOSED));
 
-  response.json({ range, status, interval, from: from.toISOString(), to: to.toISOString(), series: [...buckets].map(([date, counts]) => ({ date, ...counts, total: counts.blood + counts.organ })) });
+  const rate = (fulfilled: number, total: number) => total ? Math.round(fulfilled * 100 / total) : null;
+  response.json({ range, status, interval, from: from.toISOString(), to: to.toISOString(), series: [...buckets].map(([date, counts]) => ({ date, blood: rate(counts.bloodFulfilled, counts.bloodTotal), organ: rate(counts.organFulfilled, counts.organTotal) })) });
 }
 
 export async function getMyInstitution(request: Request, response: Response) {

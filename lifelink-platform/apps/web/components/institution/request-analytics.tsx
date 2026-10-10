@@ -9,18 +9,28 @@ type Status = "ALL" | "OPEN" | "COMPLETED" | "CLOSED";
 type Interval = "DAY" | "WEEK" | "MONTH";
 type View = "BOTH" | "BLOOD" | "ORGAN";
 type Filters = { range: Range; status: Status; interval: Interval; view: View };
-type Point = { date: string; blood: number; organ: number; total: number };
+type Point = { date: string; blood: number | null; organ: number | null };
 type AnalyticsResponse = { range: Range; status: Status; interval: Interval; from: string; to: string; series: Point[] };
-type Line = { key: "blood" | "organ" | "total"; label: string; color: string };
+type Line = { key: "blood" | "organ"; label: string; color: string };
 
 const defaultFilters: Filters = { range: "30d", status: "ALL", interval: "DAY", view: "BOTH" };
 const rangeLabels: Record<Range, string> = { "7d": "Last 7 days", "30d": "Last 30 days", "90d": "Last 90 days", "365d": "Last 12 months" };
 const statusLabels: Record<Status, string> = { ALL: "All statuses", OPEN: "Open / active", COMPLETED: "Completed", CLOSED: "Closed" };
 const intervals: Record<Interval, string> = { DAY: "Daily", WEEK: "Weekly", MONTH: "Monthly" };
-const bloodLine: Line = { key: "blood", label: "Blood", color: "#4a78c2" };
-const organLine: Line = { key: "organ", label: "Organ", color: "#087e79" };
+const bloodLine: Line = { key: "blood", label: "Blood fulfillment", color: "#4a78c2" };
+const organLine: Line = { key: "organ", label: "Organ fulfillment", color: "#087e79" };
 
-export function InstitutionRequestAnalytics() {
+export function InstitutionRequestAnalytics({
+  endpoint = "/api/institutions/me/request-analytics",
+  eyebrow = "REQUEST PERFORMANCE",
+  title = "Fulfillment performance",
+  description = "Track the percentage of requests fulfilled over time.",
+}: {
+  endpoint?: string;
+  eyebrow?: string;
+  title?: string;
+  description?: string;
+} = {}) {
   const [filters, setFilters] = useState<Filters>(defaultFilters);
   const [appliedFilters, setAppliedFilters] = useState<Filters>(defaultFilters);
   const [data, setData] = useState<AnalyticsResponse | null>(null);
@@ -32,11 +42,11 @@ export function InstitutionRequestAnalytics() {
     setError("");
     const { view: _view, ...apiFilters } = appliedFilters;
     const query = new URLSearchParams(apiFilters);
-    void requestApi<AnalyticsResponse>(`/api/institutions/me/request-analytics?${query.toString()}`)
+    void requestApi<AnalyticsResponse>(`${endpoint}?${query.toString()}`)
       .then(setData)
       .catch((reason: Error) => setError(reason.message))
       .finally(() => setLoading(false));
-  }, [appliedFilters]);
+  }, [appliedFilters, endpoint]);
   useEffect(load, [load]);
 
   const applyFilters = (event: FormEvent<HTMLFormElement>) => {
@@ -45,7 +55,7 @@ export function InstitutionRequestAnalytics() {
   };
 
   return <section className="panel institution-request-analytics">
-    <div className="panel-heading"><div><span className="eyebrow">REQUEST ANALYTICS</span><h2>Blood and organ requests</h2><p>Compare requests created or handled by this institution over time.</p></div><button className="button" type="button" onClick={load} disabled={loading}><RefreshCw size={14}/> Refresh</button></div>
+    <div className="panel-heading"><div><span className="eyebrow">{eyebrow}</span><h2>{title}</h2><p>{description}</p></div><button className="button" type="button" onClick={load} disabled={loading}><RefreshCw size={14}/> Refresh</button></div>
     <form className="institution-analytics-filters" onSubmit={applyFilters}>
       <label>Date range<select value={filters.range} onChange={(event) => setFilters((current) => ({ ...current, range: event.target.value as Range }))}>{Object.entries(rangeLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
       <label>Status<select value={filters.status} onChange={(event) => setFilters((current) => ({ ...current, status: event.target.value as Status }))}>{Object.entries(statusLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
@@ -55,9 +65,9 @@ export function InstitutionRequestAnalytics() {
     </form>
     {error && <p className="error" role="alert">{error}</p>}
     {loading && !data ? <p>Loading request analytics…</p> : data && <div className="institution-request-chart-grid" aria-busy={loading}>
-      <RequestTrendChart title={appliedFilters.view === "BOTH" ? "Blood and organ requests" : appliedFilters.view === "BLOOD" ? "Blood requests" : "Organ requests"} data={data.series} interval={data.interval} lines={appliedFilters.view === "BOTH" ? [bloodLine, organLine] : appliedFilters.view === "BLOOD" ? [bloodLine] : [organLine]}/>
+      <RequestTrendChart title={appliedFilters.view === "BOTH" ? "Blood and organ fulfillment rate" : appliedFilters.view === "BLOOD" ? "Blood fulfillment rate" : "Organ fulfillment rate"} data={data.series} interval={data.interval} lines={appliedFilters.view === "BOTH" ? [bloodLine, organLine] : appliedFilters.view === "BLOOD" ? [bloodLine] : [organLine]}/>
     </div>}
-    {data && <p className="institution-analytics-caption">Showing {rangeLabels[data.range].toLowerCase()} · {statusLabels[data.status].toLowerCase()} · grouped {intervals[data.interval].toLowerCase()} · {appliedFilters.view === "BOTH" ? "blood and organ" : appliedFilters.view === "BLOOD" ? "blood only" : "organ only"}.</p>}
+    {data && <p className="institution-analytics-caption">Rates show fulfilled requests as a percentage of requests created in each period, for {rangeLabels[data.range].toLowerCase()}, {statusLabels[data.status].toLowerCase()}, grouped {intervals[data.interval].toLowerCase()}, and {appliedFilters.view === "BOTH" ? "blood and organ" : appliedFilters.view === "BLOOD" ? "blood only" : "organ only"}.</p>}
   </section>;
 }
 
@@ -70,10 +80,8 @@ function RequestTrendChart({ title, data, interval, lines, className = "" }: { t
   const bottom = 50;
   const plotWidth = width - left - right;
   const plotHeight = height - top - bottom;
-  const maxValue = Math.max(1, ...data.flatMap((point) => lines.map((line) => point[line.key])));
-  const tickStep = Math.max(1, Math.ceil(maxValue / 4));
-  const axisMax = Math.ceil(maxValue / tickStep) * tickStep;
-  const ticks = Array.from({ length: axisMax / tickStep + 1 }, (_, index) => index * tickStep);
+  const axisMax = 100;
+  const ticks = [0, 25, 50, 75, 100];
   const xAt = (index: number) => left + (data.length <= 1 ? plotWidth / 2 : index / (data.length - 1) * plotWidth);
   const yAt = (value: number) => top + plotHeight - value / axisMax * plotHeight;
   const labelIndices = [...new Set([0, Math.round((data.length - 1) / 3), Math.round((data.length - 1) * 2 / 3), data.length - 1])];
@@ -86,13 +94,16 @@ function RequestTrendChart({ title, data, interval, lines, className = "" }: { t
         return <g key={tick}><line x1={left} y1={y} x2={width - right} y2={y} className="institution-chart-gridline"/><text x={left - 8} y={y + 3} textAnchor="end" className="institution-chart-tick">{tick}</text></g>;
       })}
       {lines.map((line) => {
-        const points = data.map((point, index) => `${xAt(index)},${yAt(point[line.key])}`).join(" ");
+        const observedPoints = data.flatMap((point, index) => point[line.key] === null ? [] : [{ index, value: point[line.key]! }]);
+        const path = observedPoints.map(({ index, value }, pointIndex) => `${pointIndex === 0 ? "M" : "L"}${xAt(index)} ${yAt(value)}`).join(" ");
         return <g key={line.key}>
-          {data.length > 1 && <polyline points={points} fill="none" stroke={line.color} strokeWidth={2.5} strokeLinejoin="round" strokeLinecap="round"/>}
-          {data.map((point, index) => <circle key={point.date} cx={xAt(index)} cy={yAt(point[line.key])} r={data.length > 40 ? 2 : 3.5} fill={line.color}><title>{`${formatDate(point.date, interval)}: ${line.label} ${point[line.key]}`}</title></circle>)}
+          {observedPoints.length > 1 && <path d={path} fill="none" stroke={line.color} strokeWidth={3} strokeLinejoin="round" strokeLinecap="round"/>}
+          {observedPoints.length === 1 && <line x1={xAt(observedPoints[0].index)} y1={yAt(0)} x2={xAt(observedPoints[0].index)} y2={yAt(observedPoints[0].value)} stroke={line.color} strokeWidth={4} strokeLinecap="round"/>}
+          {data.map((point, index) => point[line.key] !== null && <circle key={point.date} cx={xAt(index)} cy={yAt(point[line.key]!)} r={data.length > 40 ? 2 : 3.5} fill={line.color}><title>{`${formatDate(point.date, interval)}: ${line.label} ${point[line.key]}%`}</title></circle>)}
         </g>;
       })}
       {labelIndices.map((index) => data[index] && <text key={data[index].date} x={xAt(index)} y={height - 22} textAnchor="middle" className="institution-chart-tick">{formatDate(data[index].date, interval)}</text>)}
+      <text x={left - 8} y={top - 8} textAnchor="end" className="institution-chart-axis-title">%</text>
       <text x={width / 2} y={height - 4} textAnchor="middle" className="institution-chart-axis-title">Date</text>
     </svg>
   </article>;

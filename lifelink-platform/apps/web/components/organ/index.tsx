@@ -5,6 +5,7 @@ import { DonorWorkflowProgress, WorkflowPath, WorkflowProgress, type OrganWorkfl
 import { useEffect, useState } from "react";
 import { Activity, ClipboardList, Database, GitBranch, HeartPulse, LayoutDashboard, RefreshCw, ScrollText, Send, ShieldCheck, UsersRound } from "lucide-react";
 import { requestApi } from "../../lib/api-client";
+import { InstitutionOrganActivitySnapshot } from "../institution/organ-activity-snapshot";
 
 type Row = Record<string, unknown>;
 type Organ = { id: string; reference: string; organType: string; bloodGroup?: string | null; status: string; retrievalTime?: string | null; transplantCompletedAt?: string | null; preservationStartTime?: string | null; preservation?: Row; donor?: { reference: string; donorType?: string }; offers?: Array<{ status: string }> };
@@ -42,9 +43,10 @@ const titles: Record<Resource, { heading: string; description: string; key: stri
 export function OrganOverview() {
 	const [organs, setOrgans] = useState<Organ[]>([]);
 	const [metrics, setMetrics] = useState<Record<string, number>>({});
+	const [institutionAccount, setInstitutionAccount] = useState(false);
 	const [error, setError] = useState("");
 	const [loading, setLoading] = useState(true);
-	const refresh = () => { setLoading(true); setError(""); void Promise.all([requestApi<{ organs: Organ[] }>("/api/organs"), requestApi<Record<string, number>>("/api/organs/dashboard")]).then(([organData, dashboard]) => { setOrgans(organData.organs); setMetrics(dashboard); }).catch((e: Error) => setError(e.message)).finally(() => setLoading(false)); };
+	const refresh = () => { setLoading(true); setError(""); void Promise.all([requestApi<{ organs: Organ[] }>("/api/organs"), requestApi<Record<string, number>>("/api/organs/dashboard"), requestApi<unknown>("/api/institutions/me").then(() => true).catch(() => false)]).then(([organData, dashboard, isInstitution]) => { setOrgans(organData.organs); setMetrics(dashboard); setInstitutionAccount(isInstitution); }).catch((e: Error) => setError(e.message)).finally(() => setLoading(false)); };
 	useEffect(refresh, []);
 	return <main className="page-stack organ-workspace">
 		<header className="page-heading"><div><span className="eyebrow">ORGAN COORDINATION</span><h1>Coordination overview</h1><p>Operational workflow status for your authorized organ centre.</p></div><button className="button" onClick={refresh}><RefreshCw size={14}/> Refresh</button></header>
@@ -52,6 +54,7 @@ export function OrganOverview() {
 		<WorkflowPath/>
 		{error && <div role="alert" className="error">{error}</div>}
 		{loading ? <section className="panel">Loading authorized organ records…</section> : <>
+			{institutionAccount ? <section className="panel institution-organ-analytics"><div className="panel-heading"><div><span className="eyebrow">ORGAN COORDINATION OVERVIEW</span><h2>Activity snapshot</h2><p>Current donor, recipient, and coordination workload.</p></div></div><InstitutionOrganActivitySnapshot metrics={{ donorRequests: metrics.donorRequests ?? 0, recipientRequests: metrics.recipientRequests ?? 0, activeRequests: metrics.activeRequests ?? 0, backlog: metrics.backlog ?? 0, matching: metrics.matching ?? 0, procurement: metrics.procurementVolume ?? 0 }}/></section> : <>
 			<div className="metric-grid organ-metrics">
 				<Metric icon={<HeartPulse/>} label="TOTAL ORGANS" value={metrics.total ?? 0} note="Visible operational records"/>
 				<Metric icon={<ShieldCheck/>} label="DONOR INTEREST REVIEW" value={metrics.pendingDonorReview ?? 0} note="Pending consent review"/>
@@ -65,6 +68,7 @@ export function OrganOverview() {
 				<Metric icon={<ShieldCheck/>} label="CRITICAL TIMERS" value={metrics.criticalPreservation ?? 0} note="Configured operational thresholds"/>
 				<Metric icon={<ClipboardList/>} label="COMPLETED" value={metrics.completed ?? 0} note="Recorded outcomes"/>
 			</div>
+			</>}
 			<section className="panel"><div className="panel-heading"><div><span className="eyebrow">RECENT RECORDS</span><h2>Organ coordination</h2></div><Link className="button small" href="/organ-centre/organs">View inventory</Link></div>
 				{organs.length === 0 ? <div className="empty-state"><span className="empty-icon"><HeartPulse/></span><h3>No organ records yet</h3><p>Authorized organ-centre records will appear here.</p></div> : <OrganTable organs={organs.slice(0, 8)}/>}
 			</section>
@@ -213,10 +217,11 @@ function InventoryStockSummary({ active }: { active: boolean }) {
 		<div className="panel-heading"><div><span className="eyebrow">RECOVERED ORGAN STOCK</span><h2>Recovered stock and preservation timers</h2><p>Technique, storage limit, and live remaining time.</p></div></div>
 		{error ? <div className="error" role="alert">{error}</div> : loading ? <p>Loading stock summary…</p> : <div className="inventory-stock-grid">{items.map((item) => {
 			const stockedOrgans = item.organs;
+			const alertLevel = stockedOrgans.some((organ) => organ.preservationStatus === "CRITICAL") ? "critical" : stockedOrgans.some((organ) => organ.preservationStatus === "WARNING") ? "warning" : null;
 			const methods = [...new Set(stockedOrgans.map((organ) => organ.preservationMethod).filter((method): method is string => Boolean(method)))];
 			const limits = [...new Set(stockedOrgans.map((organ) => organ.maximumHours).filter((hours): hours is number => hours !== null))];
-			return <button type="button" className="inventory-stock-item" key={item.organType} onClick={() => { setSelected(item); setStockPage(1); }} aria-label={`View ${item.organType.toLowerCase()} stock details`}>
-				<span className="inventory-stock-item-heading"><strong>{item.organType.replaceAll("_", " ")}</strong><span>{item.quantity} in stock</span></span>
+			return <button type="button" className="inventory-stock-item" key={item.organType} onClick={() => { setSelected(item); setStockPage(1); }} aria-label={`View ${item.organType.toLowerCase()} stock details${alertLevel ? `; ${alertLevel} preservation alert` : ""}`}>
+				<span className="inventory-stock-item-heading"><strong>{item.organType.replaceAll("_", " ")}</strong><span className="inventory-stock-heading-meta">{alertLevel && <span className={`inventory-stock-alert-dot ${alertLevel}`} role="img" aria-label={`${alertLevel} preservation alert`} title={`${alertLevel} preservation alert`}/>}<span className="inventory-stock-count">{item.quantity} in stock</span></span></span>
 				{item.quantity > 0 ? <span className="inventory-stock-card-summary"><span>{methods.length ? methods.map(preservationMethodName).join(", ") : "Technique not recorded"}</span><small>Storage limit · {limits.length ? limits.map(formatPreservationLimit).join(", ") : "—"}</small></span> : <span className="inventory-stock-empty">No recovered stock</span>}
 			</button>;
 		})}</div>}

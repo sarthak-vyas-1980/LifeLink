@@ -8,7 +8,7 @@ import { WorkflowPath } from "../../../components/organ/workflow-progress";
 import { InstitutionAnalyticsChart } from "./institution-analytics-chart";
 import { InstitutionComparisonChart } from "./institution-comparison-chart";
 
-type Institution = { id: string; name: string; type: string; status: string; address: string; contactNumber: string | null; account: { email: string; phone: string } | null; analytics: { donorRequests: number; recipientRequests: number; handledRequests: number; activeRequests: number; completed: number; cancelled: number; expired: number; matchingVolume: number; offerVolume: number; acceptedOffers: number; procurementVolume: number; completionRate: number; backlog: number; recentActivityCount: number } };
+type Institution = { id: string; name: string; type: string; status: string; address: string; contactNumber: string | null; account: { email: string; phone: string } | null; analytics: { donorRequests: number; recipientRequests: number; handledRequests: number; fulfilledRequests: number; activeRequests: number; bloodRequests: number; bloodFulfilledRequests: number; bloodCompletionRate: number; completed: number; cancelled: number; expired: number; matchingVolume: number; offerVolume: number; acceptedOffers: number; procurementVolume: number; completionRate: number; backlog: number; recentActivityCount: number } };
 type AdminOverview = { institutions: Institution[]; institutionStatus: Record<string, number>; organMetrics: Record<string, number>; activity: Array<{ id: string; actorId: string | null; actorInstitutionId: string | null; action: string; entityType: string; entityId: string; createdAt: string; metadata: unknown }> };
 
 export default function AdminPage() {
@@ -16,7 +16,7 @@ export default function AdminPage() {
   const load = useCallback(() => { setError(""); void requestApi<AdminOverview>("/api/admin/overview").then(setData).catch((reason: Error) => setError(reason.message)); }, []);
   useEffect(load, [load]);
   const sortedInstitutions = [...(data?.institutions ?? [])].sort((a, b) =>
-    b.analytics.handledRequests - a.analytics.handledRequests || a.name.localeCompare(b.name),
+    (b.analytics.handledRequests + b.analytics.bloodRequests) - (a.analytics.handledRequests + a.analytics.bloodRequests) || a.name.localeCompare(b.name),
   );
   if (!data && !error) return <main className="page-stack admin-workspace"><section className="panel">Loading administrator analyticsÃ¢â‚¬Â¦</section></main>;
   return <main className="page-stack institution-workspace admin-workspace"><header className="welcome-banner"><div><span className="eyebrow">SYSTEM ADMINISTRATION</span><h1>Platform operations</h1><p>Institution management, system wide organ coordination and audit activity.</p></div><button className="button" onClick={load}><RefreshCw size={14}/> Refresh</button></header><WorkflowPath/>
@@ -27,8 +27,8 @@ export default function AdminPage() {
       <ul className="admin-institution-list">{sortedInstitutions.slice(0, 5).map((institution) => <li key={institution.id}>
         <button type="button" className="admin-institution-row" aria-expanded={expandedInstitutionId === institution.id} onClick={() => setExpandedInstitutionId(expandedInstitutionId === institution.id ? null : institution.id)}>
           <span className="admin-institution-name"><strong>{institution.name}</strong><small>{institution.type.replaceAll("_", " ")}</small></span>
-          <span className="admin-institution-stat"><strong>{institution.analytics.handledRequests}</strong><small>requests</small></span>
-          <span className="admin-institution-stat"><strong>{institution.analytics.activeRequests}</strong><small>active</small></span>
+          <span className="admin-institution-stat"><strong>{institution.analytics.handledRequests + institution.analytics.bloodRequests}</strong><small>requests</small></span>
+          <span className="admin-institution-stat"><strong>{institution.analytics.bloodRequests ? `${institution.analytics.bloodCompletionRate}%` : "—"} / {institution.analytics.handledRequests ? `${institution.analytics.completionRate}%` : "—"}</strong><small>blood / organ</small></span>
           <span className={`admin-status status-${institution.status.toLowerCase()}`}>{institution.status.replaceAll("_", " ")}</span>
           <span className="admin-row-hint">{expandedInstitutionId === institution.id ? "Hide details ↑" : "View details ↓"}</span>
         </button>
@@ -44,7 +44,7 @@ export default function AdminPage() {
           <InstitutionAnalyticsChart institution={institution}/>
         </div>}
       </li>)}</ul>
-      <InstitutionComparisonChart institutions={sortedInstitutions.slice(0, 5)} title="Top five institutions · requests vs active"/>
+      <InstitutionComparisonChart institutions={sortedInstitutions.slice(0, 5)} title="Top five institutions · fulfillment performance"/>
     </section>
     <section className="panel admin-recent-audit"><div className="panel-heading"><div><span className="eyebrow">SYSTEM AUDIT</span><h2>Recent activity</h2><p>Latest institution and organ coordination events.</p></div><Link className="button" href="/admin/audit">View all audit activity <ArrowRight size={14}/></Link></div>{data.activity.length ? <ul className="admin-audit-preview">{data.activity.slice(0, 5).map((event) => <li key={event.id}>
       <button type="button" className="admin-audit-row" aria-expanded={expandedAuditId === event.id} onClick={() => setExpandedAuditId(expandedAuditId === event.id ? null : event.id)}><span className="admin-audit-dot"/><span className="admin-audit-summary"><strong>{event.action.replaceAll("_", " ").toLowerCase()}</strong><small>{event.entityType} Â· {auditRecordLabel(event)}</small></span><time dateTime={event.createdAt}>{new Date(event.createdAt).toLocaleString()}</time><span className="admin-row-hint">{expandedAuditId === event.id ? "Hide" : "Details"}</span></button>

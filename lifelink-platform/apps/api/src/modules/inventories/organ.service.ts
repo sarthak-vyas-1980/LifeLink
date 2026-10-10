@@ -140,7 +140,7 @@ export async function getOrganDashboardMetrics(actor: AuthContext) {
 	const procurementWhere = institutionId ? { procurementCentreId: institutionId } : {};
 	const donorWhere = institutionId ? { institutionId } : undefined;
 	const recipientWhere = institutionId ? { institutionId, status: "ACTIVE" as const } : { status: "ACTIVE" as const };
-	const [total, statusCounts, activeOffers, acceptedOffers, procurements, procurementVolume, preserving, pendingDonorReview, pendingRecipientReview, activeRecipientRequirements, donorRequests, recipientRequests, rejectedDonors, rejectedRecipients, recentEvents, recentAudit] = await Promise.all([
+	const [total, statusCounts, activeOffers, acceptedOffers, procurements, procurementVolume, preserving, pendingDonorReview, pendingRecipientReview, activeRecipientRequirements, donorRequests, recipientRequests, activeDonorRequests, activeRecipientRequests, backlogDonorRequests, backlogRecipientRequests, rejectedDonors, rejectedRecipients, recentEvents, recentAudit] = await Promise.all([
 		database.organRecord.count({ where: organWhere }),
 		database.organRecord.groupBy({ by: ["status"], where: organWhere, _count: { _all: true } }),
 		database.organOffer.count({ where: { ...offerWhere, status: { in: ACTIVE_OFFER_STATUSES } } }),
@@ -153,6 +153,10 @@ export async function getOrganDashboardMetrics(actor: AuthContext) {
 		database.organRecipient.count({ where: recipientWhere }),
 		database.organDonor.count({ where: donorWhere }),
 		database.organRecipient.count({ where: institutionId ? { institutionId } : {} }),
+		database.organDonor.count({ where: { ...donorWhere, status: { in: [OrganDonorStatus.REGISTERED, OrganDonorStatus.ACTIVE] } } }),
+		database.organRecipient.count({ where: { ...(institutionId ? { institutionId } : {}), status: { in: [OrganRecipientStatus.PENDING_REVIEW, OrganRecipientStatus.ACTIVE, OrganRecipientStatus.MATCHED] } } }),
+		database.organDonor.count({ where: { ...donorWhere, status: OrganDonorStatus.REGISTERED } }),
+		database.organRecipient.count({ where: { ...(institutionId ? { institutionId } : {}), status: OrganRecipientStatus.PENDING_REVIEW } }),
 		database.organDonor.count({ where: { ...donorWhere, authorizationStatus: OrganAuthorizationStatus.REJECTED } }),
 		database.organRecipient.count({ where: { ...(institutionId ? { institutionId } : {}), status: OrganRecipientStatus.REJECTED } }),
 		database.organWorkflowEvent.findMany({ where: institutionId ? { institutionId } : {}, include: { organ: { select: { reference: true, organType: true } } }, orderBy: { createdAt: "desc" }, take: 5 }),
@@ -165,6 +169,8 @@ export async function getOrganDashboardMetrics(actor: AuthContext) {
 		total,
 		donorRequests,
 		recipientRequests,
+		activeRequests: activeDonorRequests + activeRecipientRequests,
+		backlog: backlogDonorRequests + backlogRecipientRequests,
 		activeWorkflows: (counts[OrganStatus.COMPLETED] ?? 0) + (counts[OrganStatus.CANCELLED] ?? 0) + (counts[OrganStatus.EXPIRED] ?? 0) + (counts[OrganStatus.UNAVAILABLE] ?? 0) < total ? total - ((counts[OrganStatus.COMPLETED] ?? 0) + (counts[OrganStatus.CANCELLED] ?? 0) + (counts[OrganStatus.EXPIRED] ?? 0) + (counts[OrganStatus.UNAVAILABLE] ?? 0)) : 0,
 		available: counts[OrganStatus.AVAILABLE] ?? 0,
 		matching: counts[OrganStatus.MATCHING] ?? 0,
