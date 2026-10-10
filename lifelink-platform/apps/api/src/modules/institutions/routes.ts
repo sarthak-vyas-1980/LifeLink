@@ -6,6 +6,7 @@ import { z } from "zod";
 import { authenticateRequest } from "../../middleware/auth";
 import { ApiError } from "../../middleware/api-error";
 import { calculateDistance } from "../maps/geospatial.service";
+import { ensureInstitutionCoordinates } from "../maps/geocoding.service";
 
 const discoveryQuery = z.object({
   type: z.nativeEnum(InstitutionType).optional(),
@@ -108,7 +109,8 @@ export async function discoverInstitutions(request: Request, response: Response)
   }
   const criteria = parsed.data;
   const institutions = await searchInstitutions({ status: InstitutionStatus.ACTIVE, ...(criteria.type ? { type: criteria.type } : {}) }, 500);
-  const results = institutions.flatMap((institution) => {
+  const locatedInstitutions = await Promise.all(institutions.map((institution) => ensureInstitutionCoordinates(institution)));
+  const results = locatedInstitutions.flatMap((institution) => {
     const hasCoordinates = criteria.latitude !== undefined && criteria.longitude !== undefined && institution.latitude !== null && institution.longitude !== null;
     const distanceKm = hasCoordinates ? calculateDistance(criteria.latitude!, criteria.longitude!, institution.latitude!, institution.longitude!) : undefined;
     if (criteria.radiusKm !== undefined && (distanceKm === undefined || distanceKm > criteria.radiusKm)) return [];

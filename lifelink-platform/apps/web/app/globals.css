@@ -551,3 +551,37 @@
 .personal-organ-snapshot-chart{min-width:0;overflow-x:auto}
 .personal-organ-snapshot-chart svg{display:block;width:100%;min-width:840px;height:auto;overflow:visible}
 .personal-organ-snapshot-label{font:10px 'DM Sans',sans-serif}
+.institution-discovery-page{gap:16px}
+.facility-map-section{display:grid;gap:10px}
+.facility-map-section-heading{display:flex;align-items:flex-end;justify-content:space-between;gap:14px;padding:0 2px}
+.facility-map-section-heading h2{margin:4px 0;font-size:19px}
+.facility-map-section-heading p{margin:0;font-size:11px}
+.facility-result-count{padding:6px 10px;border:1px solid #dcebe4;border-radius:999px;background:#f3faf6;color:#28755f;font-size:10px;font-weight:700;white-space:nowrap}
+.facility-map-legend{display:flex;flex-wrap:wrap;gap:14px;padding:0 3px;color:#738487;font-size:10px}
+.facility-map-legend span{display:inline-flex;align-items:center;gap:6px}
+.facility-map-legend i{width:9px;height:9px;border-radius:50%;box-shadow:0 0 0 2px #fff,0 0 0 3px #dce8e4}
+.facility-map-legend i.blood,.facility-dot.blood,.lifelink-marker-blood{background:#c94b4b!important}
+.facility-map-legend i.organ,.facility-dot.organ,.lifelink-marker-organ{background:#7552b5!important}
+.facility-map-legend i.hospital,.facility-dot.hospital,.lifelink-marker-hospital{background:#66817f!important}
+.lifelink-marker-blood,.lifelink-marker-organ,.lifelink-marker-hospital{border-color:#fff!important;box-shadow:0 2px 9px #123b3b55,0 0 0 3px #ffffffa6!important}
+.facility-dot.blood,.facility-dot.organ,.facility-dot.hospital{color:#fff}
+.facility-list{height:auto;max-height:none;overflow:visible}
+.facility-pagination{position:static;display:flex;align-items:center;justify-content:space-between;gap:8px;margin:10px -6px -5px;padding:10px 6px 5px;border-top:1px solid #edf2ef;background:#fff}
+.facility-pagination small{color:#738487;font-size:10px;white-space:nowrap}
+.facility-pagination>div{display:flex;gap:6px}
+.facility-pagination .button{min-height:30px;padding:6px 9px;font-size:10px}
+.facility-row{width:100%;align-items:flex-start;text-align:left;font:inherit;color:var(--ink);background:transparent;border:0;border-top:1px solid #edf2ef;cursor:pointer}
+.facility-row:hover,.facility-row.selected{background:#f3faf7}
+.facility-row:focus-visible{outline:2px solid #13877d;outline-offset:-2px}
+.facility-row-details{display:grid;gap:4px;min-width:0}
+.facility-row-details strong{font-size:12px;color:var(--ink)}
+.facility-row-details .facility-address{margin:0;color:var(--muted);font-size:10px;line-height:1.4}
+.facility-dot{flex:none}
+.notification-pagination{display:flex;align-items:center;justify-content:space-between;gap:12px;padding-top:14px;margin-top:4px;border-top:1px solid #e8efec}
+.notification-pagination>small{color:#687d78;font-size:11px}
+.notification-pagination>div{display:flex;align-items:center;gap:10px}
+.notification-pagination>div span{color:#687d78;font-size:11px}
+.notification-pagination .button{min-height:32px;padding:6px 11px;font-size:11px}
+.notification-pagination .button:disabled{cursor:not-allowed;opacity:.48}
+@media(max-width:520px){.notification-pagination{align-items:flex-start;flex-direction:column}.notification-pagination>div{width:100%;justify-content:space-between}}
+@media(max-width:720px){.facility-map-section-heading{align-items:flex-start;flex-direction:column}.facility-pagination{position:static}.institution-discovery-page>.map-filters{display:flex}}

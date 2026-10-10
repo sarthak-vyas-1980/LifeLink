@@ -11,7 +11,9 @@ export function findNotificationsForUser(
   userId: string,
   options: {
     after?: NotificationCursor;
+    newestFirst?: boolean;
     unreadOnly?: boolean;
+    skip?: number;
     take?: number;
   } = {},
 ) {
@@ -31,14 +33,18 @@ export function findNotificationsForUser(
           }
         : {}),
     },
-    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+    orderBy: [
+      { createdAt: options.newestFirst ? "desc" : "asc" },
+      { id: options.newestFirst ? "desc" : "asc" },
+    ],
+    skip: Math.max(options.skip ?? 0, 0),
     take: Math.min(Math.max(options.take ?? 50, 1), 100) + 1,
   });
 }
 
 export function findNotificationsForInstitution(
   institutionId: string,
-  options: { after?: NotificationCursor; unreadOnly?: boolean; take?: number } = {},
+  options: { after?: NotificationCursor; newestFirst?: boolean; unreadOnly?: boolean; skip?: number; take?: number } = {},
 ) {
   return database.notification.findMany({
     where: {
@@ -49,7 +55,11 @@ export function findNotificationsForInstitution(
         { createdAt: options.after.createdAt, id: { gt: options.after.id } },
       ] } : {}),
     },
-    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+    orderBy: [
+      { createdAt: options.newestFirst ? "desc" : "asc" },
+      { id: options.newestFirst ? "desc" : "asc" },
+    ],
+    skip: Math.max(options.skip ?? 0, 0),
     take: Math.min(Math.max(options.take ?? 50, 1), 100) + 1,
   });
 }

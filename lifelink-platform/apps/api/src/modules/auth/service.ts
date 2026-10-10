@@ -13,6 +13,7 @@ import {
 import { getRuntimeConfig } from "../../config";
 import { recordAuditEvent } from "../audit/service";
 import { ApiError } from "../../middleware/api-error";
+import { ensureInstitutionCoordinates } from "../maps/geocoding.service";
 
 export interface RegistrationInput {
   name: string;
@@ -84,6 +85,7 @@ export async function registerUser(input: RegistrationInput) {
           } } }
         : {}),
     });
+    void ensureInstitutionCoordinates(institution);
     const role = institutionalAccessRole(institution.type);
     const capabilities = {
       blood: institution.type === InstitutionType.BLOOD_BANK || (institution.type === InstitutionType.HOSPITAL && Boolean(input.bloodServiceEnabled)),

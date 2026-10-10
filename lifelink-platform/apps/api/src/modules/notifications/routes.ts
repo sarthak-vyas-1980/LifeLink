@@ -13,12 +13,15 @@ export function registerNotificationRoutes(router = Router()) {
 
 export async function listNotifications(request: Request, response: Response) {
   const take = readTake(request.query.limit);
-  if (take === undefined) {
+  const skip = readSkip(request.query.offset);
+  if (take === undefined || skip === undefined) {
     response.status(400).json({ code: "INVALID_LIMIT", message: "Limit must be from 1 to 100." });
     return;
   }
   const rows = await findActorNotifications(request.auth!, {
     unreadOnly: request.query.unread === "true",
+    newestFirst: true,
+    skip,
     take,
   });
   response.json({ notifications: rows.slice(0, take), hasMore: rows.length > take });
@@ -79,6 +82,13 @@ function readTake(value: unknown) {
   if (typeof value !== "string" || !/^\d+$/.test(value)) return undefined;
   const take = Number(value);
   return take >= 1 && take <= 100 ? take : undefined;
+}
+
+function readSkip(value: unknown) {
+  if (value === undefined) return 0;
+  if (typeof value !== "string" || !/^\d+$/.test(value)) return undefined;
+  const skip = Number(value);
+  return Number.isSafeInteger(skip) && skip >= 0 ? skip : undefined;
 }
 
 function parseCursor(createdAtValue: unknown, idValue: unknown) {
