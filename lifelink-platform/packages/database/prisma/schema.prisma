@@ -246,9 +246,13 @@ model User {
   name                 String
   email                String               @unique
   phone                String
+  address              String?
   passwordHash         String
+  credentialsChangedAt DateTime?
   role                 UserRole
   status               UserStatus           @default(ACTIVE)
+  deletedAt            DateTime?
+  notificationPreferences Json                @default("{\"workflow\":true,\"emergency\":true}")
   createdAt            DateTime             @default(now())
   updatedAt            DateTime             @updatedAt
   donorProfile         DonorProfile?
@@ -281,6 +285,8 @@ model Institution {
   longitude            Float?
   contactPerson        String?
   contactNumber        String?
+  notificationPreferences Json                @default("{\"workflow\":true,\"emergency\":true}")
+  deletedAt            DateTime?
   status               InstitutionStatus         @default(PENDING_VERIFICATION)
   createdAt            DateTime                  @default(now())
   updatedAt            DateTime                  @updatedAt
@@ -319,6 +325,7 @@ model InstitutionAccount {
   email         String      @unique
   phone         String
   passwordHash  String
+  credentialsChangedAt DateTime?
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
   institution   Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
@@ -654,6 +661,7 @@ model OrganDonor {
   institution         Institution              @relation(fields: [institutionId], references: [id])
   consents            OrganConsent[]
   organs              OrganRecord[]
+  medicalDocuments    MedicalDocument[]
 
   @@index([institutionId, status, createdAt])
   @@index([consentStatus, authorizationStatus])
@@ -743,9 +751,31 @@ model OrganRecipient {
   matches          OrganMatch[]
   offers           OrganOffer[]
   organs           OrganRecord[]
+  medicalDocuments MedicalDocument[]
 
   @@index([institutionId, status, priority])
   @@index([organType, bloodGroup, status])
+}
+
+model MedicalDocument {
+  id            String         @id @default(uuid()) @db.Uuid
+  donorId       String?        @db.Uuid
+  recipientId   String?        @db.Uuid
+  bucket        String
+  objectPath    String         @unique
+  fileName      String
+  contentType   String
+  fileSize      Int
+  uploadedById  String?        @db.Uuid
+  institutionId String?        @db.Uuid
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  deletedAt     DateTime?
+  donor         OrganDonor?    @relation(fields: [donorId], references: [id], onDelete: Cascade)
+  recipient     OrganRecipient? @relation(fields: [recipientId], references: [id], onDelete: Cascade)
+
+  @@index([donorId, deletedAt, createdAt])
+  @@index([recipientId, deletedAt, createdAt])
 }
 
 model RecipientRequirement {

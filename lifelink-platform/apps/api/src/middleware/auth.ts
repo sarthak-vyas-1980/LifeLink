@@ -2,6 +2,7 @@ import type { NextFunction, Request, RequestHandler, Response } from "express";
 import jwt, { JwtPayload } from "jsonwebtoken";
 import { getRuntimeConfig } from "../config";
 import type { AccessRole } from "@lifelink/shared";
+import { database } from "@lifelink/database";
 
 export interface AuthContext {
   userId?: string;
@@ -9,6 +10,7 @@ export interface AuthContext {
   role: AccessRole;
   institutionId?: string;
   capabilities?: { blood: boolean; organ: boolean };
+  tokenIssuedAt?: number;
 }
 
 const revokedTokens = new Map<string, number>();
@@ -55,6 +57,7 @@ function verifyToken(token: string): AuthContext {
     role: claims.role as AccessRole,
     institutionId: claims.principalType === "INSTITUTION" ? claims.sub : claims.institutionId,
     capabilities: claims.capabilities,
+    tokenIssuedAt: claims.iat,
   };
 }
 
@@ -79,8 +82,20 @@ export function authenticateRequest(): RequestHandler {
     }
 
     try {
-      request.auth = verifyToken(token);
-      next();
+      const actor = verifyToken(token);
+      void (async () => {
+        const active = actor.principalType === "INSTITUTION"
+          ? await database.institution.findFirst({ where: { id: actor.institutionId, deletedAt: null, status: "ACTIVE" }, select: { id: true, account: { select: { credentialsChangedAt: true } } } })
+          : await database.user.findFirst({ where: { id: actor.userId, deletedAt: null, status: "ACTIVE" }, select: { id: true, credentialsChangedAt: true } });
+        const credentialsChangedAt = active && "account" in active ? active.account?.credentialsChangedAt : active && "credentialsChangedAt" in active ? active.credentialsChangedAt : null;
+        const sessionPredatesPasswordChange = Boolean(credentialsChangedAt && actor.tokenIssuedAt && actor.tokenIssuedAt < Math.floor(credentialsChangedAt.getTime() / 1000));
+        if (!active || sessionPredatesPasswordChange) {
+          response.status(401).json({ code: "AUTH_INVALID", message: "This account is inactive or has been closed.", traceId: request.traceId });
+          return;
+        }
+        request.auth = actor;
+        next();
+      })().catch(next);
     } catch {
       response.status(401).json({
         code: "AUTH_INVALID",

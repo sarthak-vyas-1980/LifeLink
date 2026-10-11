@@ -9,9 +9,17 @@ type Notification = {
   title: string;
   message: string;
   type: string;
+  eventType?: string | null;
   status: string;
   createdAt: string;
   requestId?: string | null;
+  payload?: {
+    reference?: string | null;
+    organType?: string | null;
+    bloodGroup?: string | null;
+    requiredBy?: string | null;
+    institutionName?: string | null;
+  } | null;
 };
 
 const PAGE_SIZE = 10;
@@ -76,14 +84,26 @@ export default function NotificationsInbox() {
           <>
             <div className="notification-rows">
               {items.map((item) => (
-                <article className={`notification-row ${item.status === "UNREAD" ? "unread" : ""}`} key={item.id}>
+                <article className={`notification-row ${item.status === "UNREAD" ? "unread" : ""} ${item.eventType?.startsWith("EMERGENCY") || item.title.toUpperCase().includes("EMERGENCY") ? "emergency" : ""}`} key={item.id}>
                   <span className="notification-bullet" />
                   <div className="notification-content">
                     <div className="notification-title">
                       <strong>{item.title}</strong>
+                      {(item.eventType?.startsWith("EMERGENCY") || item.title.toUpperCase().includes("EMERGENCY")) && <span className="notification-emergency-tag">Emergency</span>}
                       <time>{new Date(item.createdAt).toLocaleString()}</time>
                     </div>
                     <p>{item.message}</p>
+                    {item.eventType === "EMERGENCY_ORGAN_RECIPIENT_BROADCAST" && (
+                      <details className="notification-emergency-details">
+                        <summary><span>View request details</span><span>Hide request details</span></summary>
+                        <div>
+                          <span><small>Organ required</small><b>{item.payload?.organType?.replaceAll("_", " ") ?? "Not specified"}</b></span>
+                          <span><small>Blood type</small><b>{formatBloodGroup(item.payload?.bloodGroup)}</b></span>
+                          <span><small>Requirement deadline</small><b>{formatDeadline(item.payload?.requiredBy)}</b></span>
+                          <span><small>Request reference</small><b>{item.payload?.reference ?? "Not specified"}</b></span>
+                        </div>
+                      </details>
+                    )}
                     {item.status === "UNREAD" && (
                       <button className="text-button" onClick={() => void markRead(item.id)}>
                         Mark as read
@@ -118,4 +138,19 @@ export default function NotificationsInbox() {
       </section>
     </div>
   );
+}
+
+function formatDeadline(value?: string | null) {
+  if (!value) return "Not specified";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "Not specified" : date.toLocaleString();
+}
+
+function formatBloodGroup(value?: string | null) {
+  if (!value) return "Not specified";
+  return value.endsWith("_POSITIVE")
+    ? `${value.slice(0, -"_POSITIVE".length)}+`
+    : value.endsWith("_NEGATIVE")
+      ? `${value.slice(0, -"_NEGATIVE".length)}−`
+      : value.replaceAll("_", " ");
 }

@@ -16,10 +16,10 @@ async function requireOrganInstitution(institutionId: string) {
 	return institution;
 }
 
-async function notifyOrganService(tx: Prisma.TransactionClient, actorId: string, institutionId: string, eventType: string, title: string, reference: string, recipients: Array<{ institutionId?: string; userId?: string }>) {
+async function notifyOrganService(tx: Prisma.TransactionClient, actorId: string, institutionId: string, eventType: string, title: string, reference: string, recipients: Array<{ institutionId?: string; userId?: string }>, emergency = false) {
 	const eventId = randomUUID();
-	await tx.workflowEvent.create({ data: { id: eventId, eventType, actorId, payload: { reference, institutionId } } });
-	if (recipients.length) await tx.notification.createMany({ data: recipients.map((recipient) => ({ ...recipient, eventId, eventType, title, message: `A personal organ coordination submission (${reference}) is ready for professional review.`, payload: { reference }, type: NotificationType.IN_APP, status: NotificationStatus.UNREAD })), skipDuplicates: true });
+	await tx.workflowEvent.create({ data: { id: eventId, eventType, actorId, payload: { reference, institutionId, emergency } } });
+	if (recipients.length) await tx.notification.createMany({ data: recipients.map((recipient) => ({ ...recipient, eventId, eventType, title, message: emergency ? `An emergency organ recipient request (${reference}) is awaiting review at the selected organ service.` : `A personal organ coordination submission (${reference}) is ready for professional review.`, payload: { reference, emergency }, type: NotificationType.IN_APP, status: NotificationStatus.UNREAD })), skipDuplicates: true });
 }
 
 export async function getMyOrganDonor(actor: AuthContext) {
@@ -95,7 +95,8 @@ export async function createMyOrganRecipient(actor: AuthContext, input: { instit
 	return database.$transaction(async (tx) => {
 		const recipient = await tx.organRecipient.create({ data: { reference: `RCPT-${new Date().getUTCFullYear()}-${randomUUID().slice(0, 8).toUpperCase()}`, userId, institutionId: institution.id, organType: input.organType as never, bloodGroup: input.bloodGroup as never, priority: input.priority ?? RequestPriority.NORMAL, status: OrganRecipientStatus.PENDING_REVIEW, requirement: { create: { organType: input.organType as never, bloodGroup: input.bloodGroup as never, priority: input.priority ?? RequestPriority.NORMAL, urgency: input.urgency, requiredBy: input.requiredBy } } }, select: { id: true, reference: true, organType: true, bloodGroup: true, priority: true, status: true, registrationDate: true, institution: { select: { id: true, name: true } }, requirement: true } });
 		await tx.auditLog.create({ data: { actorId: userId, action: "PERSONAL_ORGAN_RECIPIENT_CREATED", entityType: "OrganRecipient", entityId: recipient.id, metadata: { reference: recipient.reference, institutionId: institution.id, organType: recipient.organType } } });
-		await notifyOrganService(tx, userId, institution.id, "PERSONAL_ORGAN_RECIPIENT_CREATED", "Recipient requirement needs review", recipient.reference, reviewers);
+		const emergency = recipient.priority === RequestPriority.EMERGENCY;
+		await notifyOrganService(tx, userId, institution.id, emergency ? "EMERGENCY_ORGAN_RECIPIENT_CREATED" : "PERSONAL_ORGAN_RECIPIENT_CREATED", emergency ? "EMERGENCY: Recipient request needs review" : "Recipient requirement needs review", recipient.reference, reviewers, emergency);
 		return recipient;
 	}, { maxWait: 10_000, timeout: 30_000 });
 }

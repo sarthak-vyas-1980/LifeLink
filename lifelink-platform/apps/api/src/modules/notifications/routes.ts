@@ -1,5 +1,5 @@
 import { Router, type Request, type RequestHandler, type Response } from "express";
-import { findNotificationsForInstitution, findNotificationsForUser, markInstitutionNotificationRead, markNotificationRead } from "@lifelink/database";
+import { database, findNotificationsForInstitution, findNotificationsForUser, markInstitutionNotificationRead, markNotificationRead } from "@lifelink/database";
 import { authenticateRequest } from "../../middleware/auth";
 
 // Expose only the authenticated user's inbox and persisted reconnect stream.
@@ -24,7 +24,42 @@ export async function listNotifications(request: Request, response: Response) {
     skip,
     take,
   });
-  response.json({ notifications: rows.slice(0, take), hasMore: rows.length > take });
+  const notifications = await hydrateEmergencyDetails(rows.slice(0, take));
+  response.json({ notifications, hasMore: rows.length > take });
+}
+
+// Older emergency alerts may predate the detail fields; hydrate only the same minimal fields already intended for broadcast.
+async function hydrateEmergencyDetails<T extends { eventType: string | null; payload: unknown }>(rows: T[]) {
+  const references = rows.flatMap((row) => {
+    if (row.eventType !== "EMERGENCY_ORGAN_RECIPIENT_BROADCAST" || !isJsonObject(row.payload)) return [];
+    return typeof row.payload.reference === "string" ? [row.payload.reference] : [];
+  });
+  if (references.length === 0) return rows;
+
+  const recipientDetails = await database.organRecipient.findMany({
+    where: { reference: { in: [...new Set(references)] } },
+    select: { reference: true, organType: true, bloodGroup: true, requirement: { select: { bloodGroup: true, requiredBy: true } } },
+  });
+  const byReference = new Map(recipientDetails.map((recipient) => [recipient.reference, recipient]));
+  return rows.map((row) => {
+    if (row.eventType !== "EMERGENCY_ORGAN_RECIPIENT_BROADCAST" || !isJsonObject(row.payload)) return row;
+    const reference = typeof row.payload.reference === "string" ? row.payload.reference : undefined;
+    const recipient = reference ? byReference.get(reference) : undefined;
+    if (!recipient) return row;
+    return {
+      ...row,
+      payload: {
+        ...row.payload,
+        organType: row.payload.organType ?? recipient.organType,
+        bloodGroup: row.payload.bloodGroup ?? recipient.requirement?.bloodGroup ?? recipient.bloodGroup,
+        requiredBy: row.payload.requiredBy ?? recipient.requirement?.requiredBy?.toISOString() ?? null,
+      },
+    };
+  });
+}
+
+function isJsonObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 // Reconnect recovery reads ordered notification rows directly from PostgreSQL.
@@ -71,9 +106,32 @@ export async function updateNotificationStatus(request: Request, response: Respo
   response.status(204).end();
 }
 
-function findActorNotifications(actor: NonNullable<Request["auth"]>, options: Parameters<typeof findNotificationsForUser>[1]) {
-  if (actor.principalType === "INSTITUTION" && actor.institutionId) return findNotificationsForInstitution(actor.institutionId, options);
-  if (actor.userId) return findNotificationsForUser(actor.userId, options);
+async function findActorNotifications(actor: NonNullable<Request["auth"]>, options: Parameters<typeof findNotificationsForUser>[1]) {
+  const institution = actor.principalType === "INSTITUTION" && actor.institutionId
+    ? await database.institution.findUnique({ where: { id: actor.institutionId }, select: { notificationPreferences: true } })
+    : null;
+  const user = actor.principalType === "USER" && actor.userId
+    ? await database.user.findUnique({ where: { id: actor.userId }, select: { notificationPreferences: true } })
+    : null;
+  if (!institution && !user) throw new Error("Authenticated account has no notification identity.");
+  const preferenceValue = (institution ?? user)?.notificationPreferences;
+  const workflowEnabled = typeof preferenceValue === "object" && preferenceValue !== null && "workflow" in preferenceValue
+    ? Boolean((preferenceValue as Record<string, unknown>).workflow)
+    : true;
+  if (actor.principalType === "INSTITUTION" && actor.institutionId) {
+    if (workflowEnabled) return findNotificationsForInstitution(actor.institutionId, options);
+    const rows = await findNotificationsForInstitution(actor.institutionId, { ...options, skip: 0, take: 1000 });
+    const visible = rows.filter((row) => row.eventType?.includes("EMERGENCY"));
+    const skip = options?.skip ?? 0;
+    return visible.slice(skip, skip + (options?.take ?? 50) + 1);
+  }
+  if (actor.userId) {
+    if (workflowEnabled) return findNotificationsForUser(actor.userId, options);
+    const rows = await findNotificationsForUser(actor.userId, { ...options, skip: 0, take: 1000 });
+    const visible = rows.filter((row) => row.eventType?.includes("EMERGENCY"));
+    const skip = options?.skip ?? 0;
+    return visible.slice(skip, skip + (options?.take ?? 50) + 1);
+  }
   throw new Error("Authenticated account has no notification identity.");
 }
 

@@ -67,11 +67,11 @@ export default function RegisterPage() {
       <section className="login-aside">
         <div className="login-brand"><span className="brand-icon"><Droplets /></span>LifeLink</div>
         <div>
-          <span className="eyebrow">CARE COORDINATION NETWORK</span>
-          <h1>Join your care coordination network.</h1>
-          <p>Create a user account or connect an account to an active institution.</p>
+          <span className="eyebrow">LIFESAVING NETWORK</span>
+          <h1>Join the network for lifesaving services.</h1>
+          <p>Create a personal account or register an institution to coordinate blood and organ services.</p>
         </div>
-        <small>LifeLink · Blood coordination</small>
+        <small>LifeLink · Blood &amp; Organ Services</small>
       </section>
 
       <section className="login-main">
@@ -79,16 +79,16 @@ export default function RegisterPage() {
           <div className="login-mark"><Droplets /></div>
           <span className="eyebrow">GET STARTED</span>
           <h2>Create your account</h2>
-          <p>Register as a user or create a separate organization account with its own email and phone.</p>
+          <p>Create an individual account or register a hospital, blood bank, or organ centre.</p>
 
           <fieldset className="auth-choice-group">
             <legend>1. What type of account do you need?</legend>
             <div className="auth-choice-row">
               <button type="button" className={`auth-choice ${accountType === "USER" ? "selected" : ""}`} aria-pressed={accountType === "USER"} onClick={() => { setAccountType("USER"); setError(""); }}>
-                <strong>User</strong><span>Use donation or recipient services</span>
+                <strong>Individual</strong><span>Personal use or platform administration</span>
               </button>
               <button type="button" className={`auth-choice ${accountType === "INSTITUTION" ? "selected" : ""}`} aria-pressed={accountType === "INSTITUTION"} onClick={() => { setAccountType("INSTITUTION"); setError(""); }}>
-                <strong>Institution</strong><span>Hospital or care centre</span>
+                <strong>Institution</strong><span>Hospitals, blood banks, and organ centres</span>
               </button>
             </div>
           </fieldset>
@@ -117,7 +117,7 @@ export default function RegisterPage() {
                   <div className="auth-role-list">
                     {(["USER", "ADMIN"] as const).map((role) => (
                       <button key={role} type="button" className={`auth-role ${accountRole === role ? "selected" : ""}`} aria-pressed={accountRole === role} onClick={() => { setAccountRole(role); setError(""); }}>
-                        {role === "USER" ? "User" : "Admin"}
+                        {role === "USER" ? "Individual" : "Admin"}
                       </button>
                     ))}
                   </div>

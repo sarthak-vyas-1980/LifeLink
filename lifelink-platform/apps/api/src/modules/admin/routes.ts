@@ -12,7 +12,20 @@ export function registerAdminRoutes(router = Router()) {
   router.get("/audit", asyncRoute(async (req, res) => {
     const page = Math.max(1, Number.parseInt(String(req.query.page ?? "1"), 10) || 1);
     const pageSize = Math.min(100, Math.max(10, Number.parseInt(String(req.query.pageSize ?? "50"), 10) || 50));
-    const where = { entityType: { in: ["Institution", "OrganDonor", "OrganRecipient", "OrganRecord", "OrganConsent", "OrganMatch", "OrganOffer", "OrganProcurement"] } };
+    const mine = req.query.scope === "mine";
+    const actor = req.auth!;
+    const actorFilter = actor.principalType === "INSTITUTION" && actor.institutionId
+      ? { actorInstitutionId: actor.institutionId }
+      : actor.userId
+        ? { actorId: actor.userId }
+        : null;
+    if (mine && !actorFilter) {
+      res.json({ events: [], pagination: { page, pageSize, total: 0, totalPages: 0 } });
+      return;
+    }
+    const where = mine
+      ? actorFilter!
+      : { entityType: { in: ["User", "Institution", "Request", "Match", "BloodInventory", "OrganDonor", "OrganRecipient", "OrganRecord", "OrganConsent", "OrganMatch", "OrganOffer", "OrganProcurement", "OrganPreservationPolicy"] } };
     const [events, total] = await Promise.all([
       database.auditLog.findMany({ where, orderBy: { createdAt: "desc" }, skip: (page - 1) * pageSize, take: pageSize, select: { id: true, actorId: true, actorInstitutionId: true, action: true, entityType: true, entityId: true, metadata: true, createdAt: true } }),
       database.auditLog.count({ where }),
@@ -30,7 +43,7 @@ export function registerAdminRoutes(router = Router()) {
       database.organRecord.groupBy({ by: ["institutionId", "status"], _count: { _all: true } }),
       database.organOffer.groupBy({ by: ["offeringCentreId", "status"], _count: { _all: true } }),
       database.organProcurement.groupBy({ by: ["procurementCentreId", "status"], _count: { _all: true } }),
-      database.auditLog.findMany({ where: { entityType: { in: ["Institution", "OrganDonor", "OrganRecipient", "OrganRecord", "OrganConsent", "OrganMatch", "OrganOffer", "OrganProcurement"] } }, orderBy: { createdAt: "desc" }, take: 5, select: { id: true, actorId: true, actorInstitutionId: true, action: true, entityType: true, entityId: true, metadata: true, createdAt: true } }),
+      database.auditLog.findMany({ where: { entityType: { in: ["User", "Institution", "Request", "Match", "BloodInventory", "OrganDonor", "OrganRecipient", "OrganRecord", "OrganConsent", "OrganMatch", "OrganOffer", "OrganProcurement", "OrganPreservationPolicy"] } }, orderBy: { createdAt: "desc" }, take: 5, select: { id: true, actorId: true, actorInstitutionId: true, action: true, entityType: true, entityId: true, metadata: true, createdAt: true } }),
     ]);
     const institutionIds = institutions.map(({ id }) => id);
     const bloodRequests = institutionIds.length ? await database.request.findMany({ where: { requestType: RequestType.BLOOD, OR: [{ createdByInstitutionId: { in: institutionIds } }, { matches: { some: { providerInstitutionId: { in: institutionIds } } } }] }, select: { status: true, createdByInstitutionId: true, matches: { select: { providerInstitutionId: true } } } }) : [];

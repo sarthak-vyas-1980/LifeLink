@@ -84,7 +84,7 @@ export async function updateOrganRecipient(actor: AuthContext, recipientId: stri
 }
 
 export async function reviewOrganRecipient(actor: AuthContext, recipientId: string, decision: "APPROVE" | "REJECT", reason?: string) {
-	const recipient = await database.organRecipient.findUnique({ where: { id: recipientId }, select: { id: true, reference: true, institutionId: true, userId: true, status: true } });
+	const recipient = await database.organRecipient.findUnique({ where: { id: recipientId }, select: { id: true, reference: true, institutionId: true, userId: true, status: true, priority: true, organType: true, bloodGroup: true, requirement: { select: { bloodGroup: true, requiredBy: true } }, institution: { select: { name: true } } } });
 	if (!recipient) throw new ApiError(404, "RECIPIENT_NOT_FOUND", "Recipient request not found.");
 	await assertInstitution(actor, recipient.institutionId);
 	if (recipient.status !== OrganRecipientStatus.PENDING_REVIEW) throw new ApiError(409, "RECIPIENT_NOT_PENDING", "Only recipient requests awaiting review can be approved or rejected.");
@@ -93,9 +93,29 @@ export async function reviewOrganRecipient(actor: AuthContext, recipientId: stri
 		const changed = await tx.organRecipient.updateMany({ where: { id: recipient.id, status: OrganRecipientStatus.PENDING_REVIEW }, data: { status } });
 		if (!changed.count) throw new ApiError(409, "RECIPIENT_NOT_PENDING", "This recipient request has already been reviewed.");
 		const eventId = randomUUID();
-		const eventType = decision === "APPROVE" ? "ORGAN_RECIPIENT_APPROVED" : "ORGAN_RECIPIENT_REJECTED";
-		await tx.workflowEvent.create({ data: { id: eventId, eventType, actorId: actor.userId, actorInstitutionId: actor.institutionId, payload: { recipientId: recipient.id, reference: recipient.reference, reason: reason ?? null } } });
-		if (recipient.userId) await tx.notification.create({ data: { userId: recipient.userId, eventId, eventType, title: decision === "APPROVE" ? "Recipient requirement approved" : "Recipient request not approved", message: decision === "APPROVE" ? "The receiving organ service approved your requirement for professional coordination review." : `The receiving organ service did not approve your request.${reason ? ` Reason: ${reason}` : ""}`, payload: { reference: recipient.reference, decision, reason: reason ?? null }, type: NotificationType.IN_APP, status: NotificationStatus.UNREAD } });
+		const emergencyBroadcast = decision === "APPROVE" && recipient.priority === RequestPriority.EMERGENCY;
+		const eventType = emergencyBroadcast ? "EMERGENCY_ORGAN_RECIPIENT_BROADCAST" : decision === "APPROVE" ? "ORGAN_RECIPIENT_APPROVED" : "ORGAN_RECIPIENT_REJECTED";
+		const broadcastPayload = { reference: recipient.reference, organType: recipient.organType, bloodGroup: recipient.requirement?.bloodGroup ?? recipient.bloodGroup, requiredBy: recipient.requirement?.requiredBy?.toISOString() ?? null, institutionName: recipient.institution.name };
+		await tx.workflowEvent.create({ data: { id: eventId, eventType, actorId: actor.userId, actorInstitutionId: actor.institutionId, payload: emergencyBroadcast ? broadcastPayload : { recipientId: recipient.id, reference: recipient.reference, reason: reason ?? null } } });
+		if (emergencyBroadcast) {
+			const [users, institutions] = await Promise.all([
+				tx.user.findMany({ where: { status: "ACTIVE" }, select: { id: true } }),
+				tx.institution.findMany({ where: { status: "ACTIVE" }, select: { id: true } }),
+			]);
+			const title = "EMERGENCY: Organ recipient request broadcast";
+			const organLabel = recipient.organType.replaceAll("_", " ").toLowerCase();
+			const message = `A reviewed emergency ${organLabel} recipient request (${recipient.reference}) is seeking help through ${recipient.institution.name}. If you know someone or a service that may help, please share the reference with them.`;
+			const payload = { ...broadcastPayload, emergency: true };
+			await tx.notification.createMany({
+				data: [
+					...users.map(({ id }) => ({ userId: id, eventId, eventType, title, message, payload, type: NotificationType.IN_APP, status: NotificationStatus.UNREAD })),
+					...institutions.map(({ id }) => ({ institutionId: id, eventId, eventType, title, message, payload, type: NotificationType.IN_APP, status: NotificationStatus.UNREAD })),
+				],
+				skipDuplicates: true,
+			});
+		} else if (recipient.userId) {
+			await tx.notification.create({ data: { userId: recipient.userId, eventId, eventType, title: decision === "APPROVE" ? "Recipient requirement approved" : "Recipient request not approved", message: decision === "APPROVE" ? "The receiving organ service approved your requirement for professional coordination review." : `The receiving organ service did not approve your request.${reason ? ` Reason: ${reason}` : ""}`, payload: { reference: recipient.reference, decision, reason: reason ?? null }, type: NotificationType.IN_APP, status: NotificationStatus.UNREAD } });
+		}
 		await tx.auditLog.create({ data: { actorId: actor.userId, actorInstitutionId: actor.institutionId, action: eventType, entityType: "OrganRecipient", entityId: recipient.id, metadata: { reference: recipient.reference, reason: reason ?? null } } });
 		return tx.organRecipient.findUniqueOrThrow({ where: { id: recipient.id }, select: { id: true, reference: true, status: true, updatedAt: true } });
 	});

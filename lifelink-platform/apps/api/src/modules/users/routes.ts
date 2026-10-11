@@ -2,10 +2,15 @@ import { OrganDonorStatus, OrganRecipientStatus, RequestStatus, RequestType } fr
 import { Router, type Request, type RequestHandler, type Response } from "express";
 import { database, findUserById, saveUser } from "@lifelink/database";
 import { z } from "zod";
+import bcrypt from "bcryptjs";
 import { authenticateRequest } from "../../middleware/auth";
+import { invalidateAuthenticatedSession } from "../../middleware/auth";
 import { authorizeAction } from "../../middleware/rbac";
 import {
   profileUpdateSchema,
+  emailChangeSchema,
+  passwordChangeSchema,
+  notificationPreferencesSchema,
   validateRequest,
   validateUuidParams,
 } from "../../middleware/validation";
@@ -29,6 +34,10 @@ export function registerUserRoutes(router = Router()) {
     validateRequest(profileUpdateSchema),
     asyncRoute(updateUserProfile),
   );
+  router.patch("/me/notification-preferences", authenticateRequest(), asyncRoute(updateUserNotificationPreferences));
+  router.patch("/me/email", authenticateRequest(), asyncRoute(changeUserEmail));
+  router.post("/me/password", authenticateRequest(), validateRequest(passwordChangeSchema), asyncRoute(changeUserPassword));
+  router.delete("/me", authenticateRequest(), asyncRoute(softDeleteUserAccount));
   return router;
 }
 
@@ -131,6 +140,8 @@ export async function getUserProfile(request: Request, response: Response) {
     phone,
     role,
     status,
+    address,
+    notificationPreferences,
     createdAt,
     updatedAt,
     donorProfile,
@@ -143,6 +154,8 @@ export async function getUserProfile(request: Request, response: Response) {
     phone,
     role,
     status,
+    address,
+    notificationPreferences,
     createdAt,
     updatedAt,
     donorProfile: donorProfile
@@ -177,8 +190,65 @@ export async function updateUserProfile(request: Request, response: Response) {
     phone: user.phone,
     role: user.role,
     status: user.status,
+    address: user.address,
+    notificationPreferences: user.notificationPreferences,
     updatedAt: user.updatedAt,
   });
+}
+
+export async function updateUserNotificationPreferences(request: Request, response: Response) {
+  const userId = request.auth?.principalType === "USER" ? request.auth.userId : undefined;
+  if (!userId) { response.status(403).json({ code: "PERSONAL_ACCOUNT_REQUIRED", message: "Use a personal account to change these preferences." }); return; }
+  const parsed = notificationPreferencesSchema.safeParse(request.body);
+  if (!parsed.success) { response.status(400).json({ code: "VALIDATION_FAILED", message: "Emergency notifications must remain enabled.", fieldErrors: parsed.error.flatten().fieldErrors }); return; }
+  const preferences = parsed.data;
+  await database.user.update({ where: { id: userId }, data: { notificationPreferences: preferences } });
+  await recordAuditEvent({ actorId: userId, action: "USER_NOTIFICATION_PREFERENCES_UPDATED", entityType: "User", entityId: userId });
+  response.json({ notificationPreferences: preferences });
+}
+
+export async function changeUserEmail(request: Request, response: Response) {
+  const userId = request.auth?.principalType === "USER" ? request.auth.userId : undefined;
+  if (!userId) { response.status(403).json({ code: "PERSONAL_ACCOUNT_REQUIRED", message: "Use a personal account to change this login email." }); return; }
+  const parsed = emailChangeSchema.safeParse(request.body);
+  if (!parsed.success) { response.status(400).json({ code: "VALIDATION_FAILED", message: "Enter a valid email and your current password.", fieldErrors: parsed.error.flatten().fieldErrors }); return; }
+  const user = await database.user.findUnique({ where: { id: userId }, select: { email: true, passwordHash: true, deletedAt: true } });
+  if (!user || user.deletedAt || !(await bcrypt.compare(parsed.data.currentPassword, user.passwordHash))) { response.status(401).json({ code: "CURRENT_PASSWORD_INVALID", message: "Current password is incorrect." }); return; }
+  const email = parsed.data.email.toLowerCase().trim();
+  if (email !== user.email.toLowerCase()) {
+    const existing = await database.user.findFirst({ where: { email: { equals: email, mode: "insensitive" }, NOT: { id: userId } }, select: { id: true } });
+    if (existing) { response.status(409).json({ code: "EMAIL_IN_USE", message: "That email address is already linked to another account." }); return; }
+  }
+  await database.user.update({ where: { id: userId }, data: { email } });
+  await recordAuditEvent({ actorId: userId, action: "USER_EMAIL_CHANGED", entityType: "User", entityId: userId });
+  response.json({ email });
+}
+
+export async function changeUserPassword(request: Request, response: Response) {
+  const userId = request.auth?.principalType === "USER" ? request.auth.userId : undefined;
+  if (!userId) { response.status(403).json({ code: "PERSONAL_ACCOUNT_REQUIRED", message: "Use a personal account to change this password." }); return; }
+  const user = await database.user.findUnique({ where: { id: userId }, select: { passwordHash: true, deletedAt: true } });
+  if (!user || user.deletedAt || !(await bcrypt.compare(request.body.currentPassword, user.passwordHash))) { response.status(401).json({ code: "CURRENT_PASSWORD_INVALID", message: "Current password is incorrect." }); return; }
+  const token = request.header("authorization")?.replace(/^Bearer\s+/i, "");
+  const changedAt = new Date();
+  await database.user.update({ where: { id: userId }, data: { passwordHash: await bcrypt.hash(request.body.newPassword, 12), credentialsChangedAt: changedAt } });
+  await recordAuditEvent({ actorId: userId, action: "USER_PASSWORD_CHANGED", entityType: "User", entityId: userId });
+  if (token) invalidateAuthenticatedSession(token);
+  response.json({ changed: true, signedOut: true });
+}
+
+export async function softDeleteUserAccount(request: Request, response: Response) {
+  const userId = request.auth?.principalType === "USER" ? request.auth.userId : undefined;
+  if (!userId) { response.status(403).json({ code: "PERSONAL_ACCOUNT_REQUIRED", message: "Use a personal account to close this account." }); return; }
+  const parsed = z.object({ password: z.string().min(1).max(128) }).safeParse(request.body);
+  if (!parsed.success) { response.status(400).json({ code: "PASSWORD_REQUIRED", message: "Enter your password to confirm account closure." }); return; }
+  const user = await database.user.findUnique({ where: { id: userId }, select: { passwordHash: true, deletedAt: true } });
+  if (!user || user.deletedAt || !(await bcrypt.compare(parsed.data.password, user.passwordHash))) { response.status(401).json({ code: "PASSWORD_INVALID", message: "Password is incorrect." }); return; }
+  await database.user.update({ where: { id: userId }, data: { deletedAt: new Date(), status: "INACTIVE", email: `deleted+${userId}@deleted.lifelink.invalid` } });
+  await recordAuditEvent({ actorId: userId, action: "USER_ACCOUNT_SOFT_DELETED", entityType: "User", entityId: userId });
+  const token = request.header("authorization")?.replace(/^Bearer\s+/i, "");
+  if (token) invalidateAuthenticatedSession(token);
+  response.json({ deleted: true, softDeleted: true, signedOut: true });
 }
 
 function asyncRoute(handler: RequestHandler): RequestHandler {

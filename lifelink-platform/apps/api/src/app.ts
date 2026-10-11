@@ -11,6 +11,7 @@ import { registerInstitutionRoutes } from "./modules/institutions/routes";
 import { registerOrganCoordinationRoutes } from "./modules/organ-coordination/routes";
 import { registerConsentRoutes } from "./modules/consent/routes";
 import { registerAdminRoutes } from "./modules/admin/routes";
+import { registerAuditRoutes } from "./modules/audit/routes";
 import { handleApiError } from "./middleware/error-handler";
 import { requestContext } from "./middleware/request-context";
 import { ApiError } from "./middleware/api-error";
@@ -36,6 +37,7 @@ export function registerRoutes(app: Express) {
   app.use("/api/organs", registerOrganCoordinationRoutes());
   app.use("/api/organ-consents", registerConsentRoutes());
   app.use("/api/admin", registerAdminRoutes());
+  app.use("/api/audit", registerAuditRoutes());
   app.use("/api/requests/blood", registerBloodRequestRoutes());
   app.use("/api/emergency", registerEmergencyRoutes());
   app.use("/api/notifications", registerNotificationRoutes());

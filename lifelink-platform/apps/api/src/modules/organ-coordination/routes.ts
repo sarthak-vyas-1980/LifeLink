@@ -1,4 +1,4 @@
-import { Router, type Request, type RequestHandler, type Response } from "express";
+import { Router, raw, type Request, type RequestHandler, type Response } from "express";
 import { OrganStatus, OrganType, PreservationMethod, ProcurementStatus } from "@prisma/client";
 import { database } from "@lifelink/database";
 import { ApiError } from "../../middleware/api-error";
@@ -19,6 +19,7 @@ import {
 	expireOrganOffers, checkOrganPreservationAlerts,
 } from "./service";
 import { cancelMyOrganRecipient, createMyOrganDonor, createMyOrganRecipient, getMyOrganDonor, listMyOrganRecipients, listOrganServiceInstitutions, updateMyOrganRecipient, withdrawMyOrganDonorConsent } from "./personal.service";
+import { createMedicalDocumentDownload, deleteMedicalDocument, listMedicalDocuments, uploadMedicalDocument } from "./medical-documents.service";
 
 const coordinators = ["ORGAN_CENTRE_USER", "HOSPITAL_USER", "ADMINISTRATOR"] as const;
 let offerExpiryTimer: ReturnType<typeof setInterval> | undefined;
@@ -52,6 +53,19 @@ export function registerOrganCoordinationRoutes(router = Router()) {
 	router.post("/me/donor", authorizeAction("USER", "ADMINISTRATOR"), validateRequest(personalOrganDonorSchema), asyncRoute(async (req, res) => res.status(201).json({ donors: await createMyOrganDonor(req.auth!, req.body) })));
 	router.post("/me/donor/:donorId/withdraw", authorizeAction("USER", "ADMINISTRATOR"), validateUuidParams("donorId"), asyncRoute(async (req, res) => res.json(await withdrawMyOrganDonorConsent(req.auth!, String(req.params.donorId)))));
 	router.get("/me/recipients", authorizeAction("USER", "ADMINISTRATOR"), asyncRoute(async (req, res) => res.json({ recipients: await listMyOrganRecipients(req.auth!) })));
+	router.get("/medical-documents/:target/:requestId", validateUuidParams("requestId"), asyncRoute(async (req, res) => res.json(await listMedicalDocuments(req.auth!, documentTarget(req.params.target), String(req.params.requestId)))));
+	router.post("/medical-documents/:target/:requestId", validateUuidParams("requestId"), raw({ type: "application/octet-stream", limit: "10mb" }), asyncRoute(async (req, res) => {
+		const fileName = typeof req.query.fileName === "string" ? req.query.fileName : "";
+		const contentType = req.header("x-file-content-type") ?? "";
+		res.status(201).json({ document: await uploadMedicalDocument(req.auth!, documentTarget(req.params.target), String(req.params.requestId), Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0), fileName, contentType) });
+	}));
+	router.put("/medical-documents/:target/:requestId/:documentId", validateUuidParams("requestId", "documentId"), raw({ type: "application/octet-stream", limit: "10mb" }), asyncRoute(async (req, res) => {
+		const fileName = typeof req.query.fileName === "string" ? req.query.fileName : "";
+		const contentType = req.header("x-file-content-type") ?? "";
+		res.json({ document: await uploadMedicalDocument(req.auth!, documentTarget(req.params.target), String(req.params.requestId), Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0), fileName, contentType, String(req.params.documentId)) });
+	}));
+	router.post("/medical-documents/:target/:requestId/:documentId/download", validateUuidParams("requestId", "documentId"), asyncRoute(async (req, res) => res.json(await createMedicalDocumentDownload(req.auth!, documentTarget(req.params.target), String(req.params.requestId), String(req.params.documentId)))));
+	router.delete("/medical-documents/:target/:requestId/:documentId", validateUuidParams("requestId", "documentId"), asyncRoute(async (req, res) => res.json(await deleteMedicalDocument(req.auth!, documentTarget(req.params.target), String(req.params.requestId), String(req.params.documentId)))));
 	router.post("/me/recipients", authorizeAction("USER", "ADMINISTRATOR"), validateRequest(personalOrganRecipientSchema), asyncRoute(async (req, res) => res.status(201).json({ recipient: await createMyOrganRecipient(req.auth!, req.body) })));
 	router.patch("/me/recipients/:recipientId", authorizeAction("USER", "ADMINISTRATOR"), validateUuidParams("recipientId"), validateRequest(personalOrganRecipientUpdateSchema), asyncRoute(async (req, res) => res.json({ recipient: await updateMyOrganRecipient(req.auth!, String(req.params.recipientId), req.body) })));
 	router.post("/me/recipients/:recipientId/cancel", authorizeAction("USER", "ADMINISTRATOR"), validateUuidParams("recipientId"), asyncRoute(async (req, res) => res.json(await cancelMyOrganRecipient(req.auth!, String(req.params.recipientId)))));
@@ -138,4 +152,9 @@ export function stopOrganCoordinationWorkers() {
 
 function asyncRoute(handler: (request: Request, response: Response) => Promise<unknown>): RequestHandler {
 	return (request, response, next) => { void Promise.resolve(handler(request, response)).catch(next); };
+}
+
+function documentTarget(value: unknown): "donor" | "recipient" {
+	if (value !== "donor" && value !== "recipient") throw new ApiError(404, "DOCUMENT_TARGET_NOT_FOUND", "The medical document request was not found.");
+	return value;
 }

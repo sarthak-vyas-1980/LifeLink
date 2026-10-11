@@ -30,7 +30,12 @@ export function connectRealtime(token: string) {
 
   const endpoint = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
   socket = io(endpoint, { auth: { token }, autoConnect: false, transports: ["websocket", "polling"] });
-  socket.on("connect", () => void synchronizeRealtimeState());
+  // A connection can drop while its replay acknowledgement is pending. Keep that
+  // transient rejection from becoming an unhandled browser/Next runtime error;
+  // reconnecting emits `connect` again and retries the replay.
+  socket.on("connect", () => {
+    void synchronizeRealtimeState().catch(() => undefined);
+  });
   socket.on("workflow:event", receiveEvent);
   socket.connect();
   return socket;
@@ -47,12 +52,14 @@ export async function synchronizeRealtimeState() {
   if (!socket?.connected) return;
   let hasMore = true;
   while (hasMore) {
+    const activeSocket = socket;
+    if (!activeSocket?.connected) break;
     const page = await new Promise<{
       events: WorkflowEvent[];
       nextCursor: WorkflowEvent["cursor"] | null;
       hasMore: boolean;
     }>((resolve, reject) => {
-      socket!.timeout(10_000).emit(
+      activeSocket.timeout(10_000).emit(
         "workflow:sync",
         cursor ?? null,
         (error: Error | null, response: { events?: WorkflowEvent[]; nextCursor?: WorkflowEvent["cursor"] | null; hasMore?: boolean; code?: string }) => {

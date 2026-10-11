@@ -43,14 +43,26 @@ export const registrationSchema = z.object({
 
 export const loginSchema = z.object({
   email: z.string().email().max(254),
-  phone: z.preprocess((value) => typeof value === "string" && value.trim() === "" ? undefined : value, phoneNumberSchema.optional()),
+  phone: phoneNumberSchema,
   password: z.string().min(1).max(128),
   accountType: z.enum(["USER", "INSTITUTION"]),
 });
 
 export const profileUpdateSchema = z.object({
   name: z.string().trim().min(2).max(120).optional(),
-  phone: phoneNumberSchema.optional(),
+  phone: phoneNumberSchema,
+  address: z.string().trim().max(300).nullable().optional(),
+});
+
+export const passwordChangeSchema = z.object({ currentPassword: z.string().min(1).max(128), newPassword: z.string().min(6).max(128) });
+export const emailChangeSchema = z.object({ email: z.string().trim().email().max(254), currentPassword: z.string().min(1).max(128) });
+export const notificationPreferencesSchema = z.object({ workflow: z.boolean(), emergency: z.literal(true) });
+export const institutionProfileUpdateSchema = z.object({
+  name: z.string().trim().min(2).max(160),
+  address: z.string().trim().min(3).max(300),
+  contactPerson: z.string().trim().min(2).max(120).nullable(),
+  contactNumber: phoneNumberSchema,
+  email: z.string().email().max(254),
 });
 
 const bloodRequestFields = z.object({

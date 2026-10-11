@@ -3,10 +3,14 @@ import { Router, type Request, type RequestHandler, type Response } from "expres
 import { searchInstitutions } from "@lifelink/database";
 import { database } from "@lifelink/database";
 import { z } from "zod";
+import bcrypt from "bcryptjs";
 import { authenticateRequest } from "../../middleware/auth";
+import { invalidateAuthenticatedSession } from "../../middleware/auth";
 import { ApiError } from "../../middleware/api-error";
+import { institutionProfileUpdateSchema, notificationPreferencesSchema, passwordChangeSchema } from "../../middleware/validation";
 import { calculateDistance } from "../maps/geospatial.service";
 import { ensureInstitutionCoordinates } from "../maps/geocoding.service";
+import { recordAuditEvent } from "../audit/service";
 
 const discoveryQuery = z.object({
   type: z.nativeEnum(InstitutionType).optional(),
@@ -25,6 +29,10 @@ const requestAnalyticsQuery = z.object({
 
 export function registerInstitutionRoutes(router = Router()) {
   router.get("/me", authenticateRequest(), asyncRoute(getMyInstitution));
+  router.patch("/me", authenticateRequest(), asyncRoute(updateMyInstitution));
+  router.patch("/me/notification-preferences", authenticateRequest(), asyncRoute(updateInstitutionNotificationPreferences));
+  router.post("/me/password", authenticateRequest(), asyncRoute(changeInstitutionPassword));
+  router.delete("/me", authenticateRequest(), asyncRoute(softDeleteInstitution));
   router.get("/me/request-analytics", authenticateRequest(), asyncRoute(getMyRequestAnalytics));
   router.get("/", authenticateRequest(), asyncRoute(discoverInstitutions));
   return router;
@@ -95,9 +103,71 @@ export async function getMyRequestAnalytics(request: Request, response: Response
 export async function getMyInstitution(request: Request, response: Response) {
   const actor = request.auth!;
   if (actor.principalType !== "INSTITUTION" || !actor.institutionId) throw new ApiError(403, "INSTITUTION_ACCOUNT_REQUIRED", "Sign in with an institution account to open this workspace.");
-  const institution = await database.institution.findUnique({ where: { id: actor.institutionId }, select: { id: true, name: true, type: true, status: true, address: true, contactPerson: true, contactNumber: true, hospitalProfile: { select: { emergencySupport: true, bloodService: { select: { id: true } }, organService: { select: { id: true } } } }, organCentreProfile: { select: { id: true } }, bloodBankProfile: { select: { id: true } } } });
+  const institution = await database.institution.findUnique({ where: { id: actor.institutionId }, select: { id: true, name: true, type: true, status: true, address: true, contactPerson: true, contactNumber: true, notificationPreferences: true, account: { select: { email: true, phone: true } }, hospitalProfile: { select: { emergencySupport: true, bloodService: { select: { id: true } }, organService: { select: { id: true } } } }, organCentreProfile: { select: { id: true } }, bloodBankProfile: { select: { id: true } } } });
   if (!institution) throw new ApiError(404, "INSTITUTION_NOT_FOUND", "Institution account was not found.");
   response.json({ institution, capabilities: { blood: institution.type === "BLOOD_BANK" || Boolean(institution.hospitalProfile?.bloodService), organ: institution.type === "ORGAN_CENTRE" || Boolean(institution.hospitalProfile?.organService), emergency: Boolean(institution.hospitalProfile?.emergencySupport) } });
+}
+
+async function updateMyInstitution(request: Request, response: Response) {
+  const actor = request.auth;
+  if (actor?.principalType !== "INSTITUTION" || !actor.institutionId) throw new ApiError(403, "INSTITUTION_ACCOUNT_REQUIRED", "Sign in with an institution account to edit this profile.");
+  const parsed = institutionProfileUpdateSchema.safeParse(request.body);
+  if (!parsed.success) throw new ApiError(400, "VALIDATION_FAILED", "Institution profile details are invalid.");
+  const { name, address, contactPerson, contactNumber, email } = parsed.data;
+  const account = await database.institutionAccount.findUnique({ where: { institutionId: actor.institutionId } });
+  if (!account) throw new ApiError(404, "INSTITUTION_ACCOUNT_NOT_FOUND", "Institution login account was not found.");
+  const previous = await database.institution.findUnique({ where: { id: actor.institutionId }, select: { address: true } });
+  const normalizedEmail = email.toLowerCase().trim();
+  const duplicate = await database.institutionAccount.findFirst({ where: { email: normalizedEmail, NOT: { institutionId: actor.institutionId } }, select: { id: true } });
+  if (duplicate) throw new ApiError(409, "EMAIL_IN_USE", "That email address is already used by another institution.");
+  const [institution] = await database.$transaction([
+    database.institution.update({ where: { id: actor.institutionId }, data: { name, address, contactPerson, contactNumber, ...(previous?.address !== address ? { latitude: null, longitude: null } : {}) } }),
+    database.institutionAccount.update({ where: { institutionId: actor.institutionId }, data: { email: normalizedEmail, phone: contactNumber } }),
+  ]);
+  await recordAuditEvent({ actorInstitutionId: actor.institutionId, action: "INSTITUTION_PROFILE_UPDATED", entityType: "Institution", entityId: actor.institutionId, metadata: { fields: ["name", "address", "contactPerson", "contactNumber", "email"] } });
+  const located = await ensureInstitutionCoordinates(institution);
+  response.json({ institution: { ...located, email: normalizedEmail } });
+}
+
+async function updateInstitutionNotificationPreferences(request: Request, response: Response) {
+  const id = request.auth?.principalType === "INSTITUTION" ? request.auth.institutionId : undefined;
+  if (!id) throw new ApiError(403, "INSTITUTION_ACCOUNT_REQUIRED", "Use an institution account to change these preferences.");
+  const parsed = notificationPreferencesSchema.safeParse(request.body);
+  if (!parsed.success) throw new ApiError(400, "VALIDATION_FAILED", "Emergency notifications must remain enabled.");
+  await database.institution.update({ where: { id }, data: { notificationPreferences: parsed.data } });
+  await recordAuditEvent({ actorInstitutionId: id, action: "INSTITUTION_NOTIFICATION_PREFERENCES_UPDATED", entityType: "Institution", entityId: id });
+  response.json({ notificationPreferences: parsed.data });
+}
+
+async function changeInstitutionPassword(request: Request, response: Response) {
+  const id = request.auth?.principalType === "INSTITUTION" ? request.auth.institutionId : undefined;
+  if (!id) throw new ApiError(403, "INSTITUTION_ACCOUNT_REQUIRED", "Use an institution account to change this password.");
+  const parsed = passwordChangeSchema.safeParse(request.body);
+  if (!parsed.success) throw new ApiError(400, "VALIDATION_FAILED", "Password change details are invalid.");
+  const account = await database.institutionAccount.findUnique({ where: { institutionId: id } });
+  if (!account || !(await bcrypt.compare(parsed.data.currentPassword, account.passwordHash))) throw new ApiError(401, "CURRENT_PASSWORD_INVALID", "Current password is incorrect.");
+  await database.institutionAccount.update({ where: { institutionId: id }, data: { passwordHash: await bcrypt.hash(parsed.data.newPassword, 12), credentialsChangedAt: new Date() } });
+  await recordAuditEvent({ actorInstitutionId: id, action: "INSTITUTION_PASSWORD_CHANGED", entityType: "Institution", entityId: id });
+  const token = request.header("authorization")?.replace(/^Bearer\s+/i, "");
+  if (token) invalidateAuthenticatedSession(token);
+  response.json({ changed: true, signedOut: true });
+}
+
+async function softDeleteInstitution(request: Request, response: Response) {
+  const id = request.auth?.principalType === "INSTITUTION" ? request.auth.institutionId : undefined;
+  if (!id) throw new ApiError(403, "INSTITUTION_ACCOUNT_REQUIRED", "Use an institution account to close this profile.");
+  const parsed = z.object({ password: z.string().min(1).max(128) }).safeParse(request.body);
+  if (!parsed.success) throw new ApiError(400, "PASSWORD_REQUIRED", "Enter your password to confirm profile closure.");
+  const account = await database.institutionAccount.findUnique({ where: { institutionId: id } });
+  if (!account || !(await bcrypt.compare(parsed.data.password, account.passwordHash))) throw new ApiError(401, "PASSWORD_INVALID", "Password is incorrect.");
+  await database.$transaction([
+    database.institution.update({ where: { id }, data: { deletedAt: new Date(), status: InstitutionStatus.INACTIVE } }),
+    database.institutionAccount.update({ where: { institutionId: id }, data: { email: `deleted+${account.id}@deleted.lifelink.invalid` } }),
+  ]);
+  await recordAuditEvent({ actorInstitutionId: id, action: "INSTITUTION_PROFILE_SOFT_DELETED", entityType: "Institution", entityId: id });
+  const token = request.header("authorization")?.replace(/^Bearer\s+/i, "");
+  if (token) invalidateAuthenticatedSession(token);
+  response.json({ deleted: true, softDeleted: true, signedOut: true });
 }
 
 // Publish only active, public discovery fields; private contacts stay behind institution workflows.

@@ -3,6 +3,7 @@ import jwt from "jsonwebtoken";
 import { InstitutionStatus, InstitutionType, UserRole, UserStatus } from "@prisma/client";
 import type { AccessRole } from "@lifelink/shared";
 import {
+  database,
   createInstitution,
   createUser,
   findInstitutionAccountByEmail,
@@ -33,7 +34,11 @@ export interface RegistrationInput {
 interface InstitutionCapabilities { blood: boolean; organ: boolean }
 
 function normalizePhoneNumber(value: string) {
-  return value.replace(/[\s().-]/g, "");
+  const digits = value.replace(/\D/g, "");
+  // Treat Indian local, trunk-prefixed, and +91 formats as the same number.
+  if (digits.length === 12 && digits.startsWith("91")) return digits.slice(2);
+  if (digits.length === 11 && digits.startsWith("0")) return digits.slice(1);
+  return digits;
 }
 
 function institutionalAccessRole(type: InstitutionType): AccessRole {
@@ -58,6 +63,20 @@ function issueToken(subject: string, role: AccessRole, principalType: "USER" | "
 
 export async function registerUser(input: RegistrationInput) {
   const passwordHash = await bcrypt.hash(input.password, 12);
+  const normalizedEmail = input.email.toLowerCase().trim();
+
+  // Keep soft-deleted history, but free its login email for a fresh registration.
+  if (input.accountType === "INSTITUTION") {
+    const oldAccount = await findInstitutionAccountByEmail(normalizedEmail);
+    if (oldAccount?.institution.deletedAt) {
+      await database.institutionAccount.update({ where: { id: oldAccount.id }, data: { email: `deleted+${oldAccount.id}@deleted.lifelink.invalid` } });
+    }
+  } else {
+    const oldUser = await findUserByEmail(normalizedEmail);
+    if (oldUser?.deletedAt) {
+      await saveUser(oldUser.id, { email: `deleted+${oldUser.id}@deleted.lifelink.invalid` });
+    }
+  }
 
   if (input.accountType === "INSTITUTION") {
     if (!input.institutionType || !input.address?.trim()) {
@@ -72,7 +91,7 @@ export async function registerUser(input: RegistrationInput) {
       status: InstitutionStatus.ACTIVE,
       account: {
         create: {
-          email: input.email.toLowerCase().trim(),
+          email: normalizedEmail,
           phone: input.phone,
           passwordHash,
         },
@@ -102,7 +121,7 @@ export async function registerUser(input: RegistrationInput) {
       user: {
         id: institution.id,
         name: institution.name,
-        email: input.email.toLowerCase().trim(),
+        email: normalizedEmail,
         phone: input.phone,
         passwordHash,
         role,
@@ -120,7 +139,7 @@ export async function registerUser(input: RegistrationInput) {
   }
   const user = await createUser({
     name: input.name.trim(),
-    email: input.email.toLowerCase().trim(),
+    email: normalizedEmail,
     phone: input.phone,
     passwordHash,
     role: input.role,
@@ -138,7 +157,7 @@ export async function registerUser(input: RegistrationInput) {
 
 export async function loginUser(
   email: string,
-  phone: string | undefined,
+  phone: string,
   password: string,
   accountType: "USER" | "INSTITUTION",
 ) {
@@ -147,9 +166,9 @@ export async function loginUser(
     const account = await findInstitutionAccountByEmail(normalizedEmail);
     const valid = account
       ? (await bcrypt.compare(password, account.passwordHash)) &&
-        (!phone || normalizePhoneNumber(account.phone) === normalizePhoneNumber(phone))
+        normalizePhoneNumber(account.phone) === normalizePhoneNumber(phone)
       : false;
-    if (!account || !valid || account.institution.status !== InstitutionStatus.ACTIVE) {
+    if (!account || !valid || account.institution.deletedAt || account.institution.status !== InstitutionStatus.ACTIVE) {
       throw new ApiError(401, "AUTH_INVALID", "Invalid credentials.");
     }
     const role = institutionalAccessRole(account.institution.type);
@@ -184,9 +203,9 @@ export async function loginUser(
   const user = await findUserByEmail(normalizedEmail);
   const valid = user
     ? (await bcrypt.compare(password, user.passwordHash)) &&
-      (!phone || normalizePhoneNumber(user.phone) === normalizePhoneNumber(phone))
+      normalizePhoneNumber(user.phone) === normalizePhoneNumber(phone)
     : false;
-  if (!user || !valid || user.status !== UserStatus.ACTIVE) {
+  if (!user || !valid || user.deletedAt || user.status !== UserStatus.ACTIVE) {
     throw new ApiError(401, "AUTH_INVALID", "Invalid credentials.");
   }
   const role: AccessRole = user.role === UserRole.ADMIN ? "ADMINISTRATOR" : "USER";

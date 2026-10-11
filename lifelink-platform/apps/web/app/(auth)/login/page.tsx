@@ -37,7 +37,7 @@ export default function LoginPage() {
         method: "POST",
         body: JSON.stringify({
           email,
-          ...(phone.trim() ? { phone: phone.trim() } : {}),
+          phone: phone.trim(),
           password,
           accountType,
         }),
@@ -56,11 +56,11 @@ export default function LoginPage() {
       <section className="login-aside">
         <div className="login-brand"><span className="brand-icon"><Droplets /></span>LifeLink</div>
         <div>
-          <span className="eyebrow">CARE COORDINATION NETWORK</span>
-          <h1>When care can’t wait, every connection matters.</h1>
-          <p>Coordinate blood requests, confirmed offers, and delivery updates from one secure workspace.</p>
+          <span className="eyebrow">LIFESAVING NETWORK</span>
+          <h1>A trusted network for lifesaving services.</h1>
+          <p>Coordinate blood and organ requests, institutional responses, and workflow updates through one secure platform.</p>
         </div>
-        <small>LifeLink · Blood coordination</small>
+        <small>LifeLink · Blood &amp; Organ Services</small>
       </section>
 
       <section className="login-main">
@@ -74,10 +74,10 @@ export default function LoginPage() {
             <legend>1. What type of account do you use?</legend>
             <div className="auth-choice-row">
               <button type="button" className={`auth-choice ${accountType === "USER" ? "selected" : ""}`} aria-pressed={accountType === "USER"} onClick={() => { setAccountType("USER"); setError(""); }}>
-                <strong>User</strong><span>Use donation or recipient services</span>
+                <strong>Individual</strong><span>Personal use or platform administration</span>
               </button>
               <button type="button" className={`auth-choice ${accountType === "INSTITUTION" ? "selected" : ""}`} aria-pressed={accountType === "INSTITUTION"} onClick={() => { setAccountType("INSTITUTION"); setError(""); }}>
-                <strong>Institution</strong><span>Hospital or care centre</span>
+                <strong>Institution</strong><span>Hospitals, blood banks, and organ centres</span>
               </button>
             </div>
           </fieldset>
@@ -85,9 +85,8 @@ export default function LoginPage() {
           {accountType && (
             <div className="auth-credentials">
               <label>Email address<input type="email" required autoComplete="username" value={email} onChange={(event) => setEmail(event.target.value)} /></label>
-              <label>Phone number (optional)<input type="tel" autoComplete="tel" inputMode="tel" value={phone} onChange={(event) => setPhone(event.target.value)} /></label>
+              <label>Phone number<input required type="tel" autoComplete="tel" inputMode="tel" value={phone} onChange={(event) => setPhone(event.target.value)} /></label>
               <label>Password<input type="password" required autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} /></label>
-              <p className="auth-hint">Sign in with your registered email and password. If you enter a phone number, it must match your account.</p>
             </div>
           )}
 

@@ -118,11 +118,11 @@ export async function getOrganInventorySummary(actor: AuthContext) {
 				...(institutionId ? { institutionId } : {}),
 				donor: { donorType: "POSTHUMOUS_INTENT" },
 				retrievalTime: { not: null },
-				status: { notIn: [OrganStatus.TRANSPLANTED, OrganStatus.COMPLETED, OrganStatus.UNAVAILABLE, OrganStatus.DISCARDED, OrganStatus.CANCELLED] },
+				status: { notIn: [OrganStatus.TRANSPLANTED, OrganStatus.COMPLETED, OrganStatus.UNAVAILABLE, OrganStatus.DISCARDED, OrganStatus.CANCELLED, OrganStatus.EXPIRED] },
 			},
 			select: { id: true, reference: true, organType: true, institutionId: true, status: true, retrievalTime: true, preservationMethod: true, preservationStartTime: true, donor: { select: { id: true, reference: true } } },
 		});
-	const stockWithClocks = await attachPreservationClocks(stock);
+	const stockWithClocks = (await attachPreservationClocks(stock)).filter((organ) => organ.status !== OrganStatus.EXPIRED && organ.preservation.status !== PreservationStatus.EXPIRED);
 	const organTypes = Object.values(OrganType);
 	return {
 		stock: organTypes.map((organType) => {
