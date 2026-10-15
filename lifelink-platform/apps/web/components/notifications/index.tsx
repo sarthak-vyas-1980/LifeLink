@@ -56,6 +56,7 @@ export default function NotificationsInbox() {
     try {
       await submitWorkflowAction(`/api/notifications/${id}/read`);
       setItems((current) => current.map((item) => (item.id === id ? { ...item, status: "READ" } : item)));
+      window.dispatchEvent(new Event("lifelink:notifications-changed"));
     } catch (cause) {
       setError(cause instanceof ApiFailure ? cause.message : "Could not update notification.");
     }

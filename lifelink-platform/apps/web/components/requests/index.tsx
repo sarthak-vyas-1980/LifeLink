@@ -1,5 +1,6 @@
 "use client";
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import { useRouter } from "next/navigation";
 import { BLOOD_COMPONENTS, BLOOD_GROUPS } from "@lifelink/shared";
 import { ApiFailure, requestApi, submitWorkflowAction } from "../../lib/api-client";
 import { getCurrentSession } from "../../lib/auth";
@@ -27,13 +28,28 @@ const DEMO_FALLBACK_OFFERS: Record<string, Offer[]> = {
 };
 
 export function RequestForm({ onCreated }: { onCreated:(request:BloodRequest, candidates:Candidate[], retryRadius?:number)=>void }) {
+  const router = useRouter();
   const [emergency,setEmergency]=useState(false); const [busy,setBusy]=useState(false); const [error,setError]=useState("");
   const [form,setForm]=useState({bloodGroup:"O_POSITIVE",component:"RED_BLOOD_CELLS",quantity:"1",priority:"NORMAL",location:"",contactNumber:"",latitude:"",longitude:"",radiusKm:"50"});
   const update=(key:keyof typeof form,value:string)=>setForm((current)=>({...current,[key]:value}));
-  const locate=()=>navigator.geolocation?.getCurrentPosition(
-    (position)=>setForm((current)=>({...current,latitude:String(position.coords.latitude),longitude:String(position.coords.longitude)})),
-    ()=>setError("Location access was unavailable."),
-  );
+  const locate=()=>{
+    setError("");
+    if (!window.isSecureContext || !navigator.geolocation) {
+      router.push("/profile#location-access");
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      (position)=>setForm((current)=>({...current,latitude:String(position.coords.latitude),longitude:String(position.coords.longitude)})),
+      (cause)=>{
+        if (cause.code === cause.PERMISSION_DENIED) {
+          router.push("/profile#location-access");
+        } else {
+          setError(cause.code === cause.TIMEOUT ? "Location lookup timed out. Check your device location service and try again." : "Your device could not determine a location. Check device location services and try again.");
+        }
+      },
+      { timeout: 10000, maximumAge: 0 },
+    );
+  };
   const submit=async(event:FormEvent)=>{event.preventDefault();setBusy(true);setError("");try{
     const body={bloodGroup:form.bloodGroup,component:form.component,quantity:Number(form.quantity),location:form.location,contactNumber:form.contactNumber,...(form.latitude&&form.longitude?{latitude:Number(form.latitude),longitude:Number(form.longitude)}:{}),...(form.radiusKm?{radiusKm:Number(form.radiusKm)}:{})};
     try {

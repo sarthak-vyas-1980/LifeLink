@@ -19,6 +19,8 @@ export default function ProfileManager() {
   const [address, setAddress] = useState("");
   const [contactPerson, setContactPerson] = useState("");
   const [preferences, setPreferences] = useState<Preferences>({ workflow: true, emergency: true });
+  const [locationPermission, setLocationPermission] = useState<PermissionState | "unsupported" | "insecure" | "unknown">("unknown");
+  const [locationHelp, setLocationHelp] = useState("");
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [deletePassword, setDeletePassword] = useState("");
@@ -45,6 +47,67 @@ export default function ProfileManager() {
       })
       .catch((cause) => setError(cause instanceof Error ? cause.message : "Could not load the profile."));
   }, [router]);
+
+  useEffect(() => {
+    if (!window.isSecureContext) {
+      setLocationPermission("insecure");
+      setLocationHelp("Location access requires HTTPS or localhost. This address is not a secure context, so your browser cannot show a permission prompt.");
+      return;
+    }
+    if (!navigator.geolocation) {
+      setLocationPermission("unsupported");
+      setLocationHelp("This browser does not provide location access.");
+      return;
+    }
+    if (!navigator.permissions?.query) {
+      setLocationPermission("unknown");
+      setLocationHelp("Your browser can check location when you select the button below.");
+      return;
+    }
+    void navigator.permissions.query({ name: "geolocation" }).then((permission) => {
+      setLocationPermission(permission.state);
+      setLocationHelp(permission.state === "denied"
+        ? "Location is blocked for this site. Change it in your browser’s site settings, then reload LifeLink."
+        : permission.state === "prompt"
+          ? "Your browser will ask whether LifeLink can use your location when you select the button below."
+          : "LifeLink is allowed to use your location when you request it.");
+      permission.onchange = () => setLocationPermission(permission.state);
+    }).catch(() => {
+      setLocationPermission("unknown");
+      setLocationHelp("Your browser can check location when you select the button below.");
+    });
+  }, []);
+
+  function checkLocationAccess() {
+    setLocationHelp("");
+    if (!window.isSecureContext) {
+      setLocationPermission("insecure");
+      setLocationHelp("Location access requires HTTPS or localhost. This address is not a secure context, so your browser cannot show a permission prompt.");
+      return;
+    }
+    if (!navigator.geolocation) {
+      setLocationPermission("unsupported");
+      setLocationHelp("This browser does not provide location access.");
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      () => {
+        setLocationPermission("granted");
+        setLocationHelp("Location access is working. LifeLink only reads your location when you request it.");
+      },
+      (cause) => {
+        if (cause.code === cause.PERMISSION_DENIED) {
+          setLocationPermission("denied");
+          setLocationHelp("Location is blocked for this site. In Chrome, select the site controls icon beside the address, open Site settings, set Location to Allow, and reload LifeLink.");
+        } else if (cause.code === cause.TIMEOUT) {
+          setLocationHelp("The location lookup timed out. Check your device’s location service and try again.");
+        } else {
+          setLocationHelp("Your device could not determine a location. Check that device location services are enabled and try again.");
+        }
+      },
+      { timeout: 10000, maximumAge: 0 },
+    );
+  }
 
   async function run(action: string, task: () => Promise<void>) {
     setBusy(action); setError(""); setMessage("");
@@ -124,6 +187,9 @@ export default function ProfileManager() {
     </section>
     <section className="panel"><div className="panel-heading"><div><span className="eyebrow">NOTIFICATIONS</span><h2>Notification preferences</h2><p>Emergency broadcasts stay enabled so urgent requests can reach every account.</p></div></div>
       <form className="profile-preferences" onSubmit={savePreferences}><label><span><strong>Workflow updates</strong><small>Receive routine request and coordination notifications.</small></span><input type="checkbox" checked={preferences.workflow} onChange={(e) => setPreferences({ workflow: e.target.checked, emergency: true })} /></label><label><span><strong>Emergency broadcasts</strong><small>Always on for verified emergency requests.</small></span><input type="checkbox" checked disabled aria-label="Emergency broadcasts always enabled" /></label><button className="button primary" disabled={busy === "preferences"}>{busy === "preferences" ? "Saving…" : "Save preferences"}</button></form>
+    </section>
+    <section className="panel" id="location-access"><div className="panel-heading"><div><span className="eyebrow">LOCATION</span><h2>Location access</h2><p>LifeLink uses your location only when you request nearby service matching.</p></div><span className="pill neutral">{locationPermission === "insecure" ? "Secure connection required" : locationPermission === "unsupported" ? "Unavailable" : locationPermission}</span></div>
+      <div className="profile-location-help"><p>{locationHelp || "Checking your browser’s location permission…"}</p>{locationPermission === "insecure" && <p>For local testing, open LifeLink at <strong>http://localhost:3000</strong> on this computer, or configure HTTPS to use it from another device.</p>}{locationPermission !== "insecure" && locationPermission !== "unsupported" && locationPermission !== "denied" && <button className="button quiet" type="button" onClick={checkLocationAccess}>Check location access</button>}</div>
     </section>
     <section className="panel"><div className="panel-heading"><div><span className="eyebrow">SECURITY</span><h2>Change password</h2><p>Enter your current password to set a new one. You will be signed out on success.</p></div></div>
       <form className="profile-form profile-password" onSubmit={changePassword}><label>Current password<input type="password" autoComplete="current-password" required value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} /></label><label>New password<input type="password" autoComplete="new-password" minLength={6} required value={newPassword} onChange={(e) => setNewPassword(e.target.value)} /><small>Use at least 6 characters.</small></label><div className="profile-wide profile-actions"><button className="button primary" disabled={busy === "password"}>{busy === "password" ? "Updating…" : "Update password"}</button></div></form>

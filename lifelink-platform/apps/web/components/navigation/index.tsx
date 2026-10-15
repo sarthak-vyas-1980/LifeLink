@@ -34,8 +34,10 @@ export default function DashboardShell({children}:{children:React.ReactNode}){
     };
     refresh();
     const unsubscribe = subscribeToWorkflowEvents(refresh);
+    window.addEventListener("lifelink:notifications-changed", refresh);
     return () => {
       window.removeEventListener("lifelink:session-invalid", handleInvalidSession);
+      window.removeEventListener("lifelink:notifications-changed", refresh);
       unsubscribe();
     };
   }, [router]);

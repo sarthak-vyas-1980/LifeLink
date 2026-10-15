@@ -1,7 +1,7 @@
 import type { NextFunction, Request, RequestHandler, Response } from "express";
 import jwt, { JwtPayload } from "jsonwebtoken";
 import { getRuntimeConfig } from "../config";
-import type { AccessRole } from "@lifelink/shared";
+import { ACCESS_ROLES, type AccessRole } from "@lifelink/shared";
 import { database } from "@lifelink/database";
 
 export interface AuthContext {
@@ -47,13 +47,24 @@ function verifyToken(token: string): AuthContext {
   }
 
   const claims = payload as JwtPayload & Partial<AuthContext>;
-  if (!claims.sub || !claims.role) {
+  if (
+    typeof claims.sub !== "string" ||
+    !claims.sub ||
+    !claims.role ||
+    !ACCESS_ROLES.includes(claims.role as AccessRole) ||
+    (claims.principalType !== "USER" && claims.principalType !== "INSTITUTION")
+  ) {
+    throw new Error("Invalid authentication claims.");
+  }
+
+  const institutionRole = ["HOSPITAL_USER", "BLOOD_BANK_USER", "ORGAN_CENTRE_USER"].includes(claims.role);
+  if ((claims.principalType === "INSTITUTION") !== institutionRole) {
     throw new Error("Invalid authentication claims.");
   }
 
   return {
-    userId: claims.principalType === "INSTITUTION" ? undefined : claims.sub,
-    principalType: claims.principalType === "INSTITUTION" ? "INSTITUTION" : "USER",
+    userId: claims.principalType === "USER" ? claims.sub : undefined,
+    principalType: claims.principalType,
     role: claims.role as AccessRole,
     institutionId: claims.principalType === "INSTITUTION" ? claims.sub : claims.institutionId,
     capabilities: claims.capabilities,
@@ -84,10 +95,25 @@ export function authenticateRequest(): RequestHandler {
     try {
       const actor = verifyToken(token);
       void (async () => {
-        const active = actor.principalType === "INSTITUTION"
-          ? await database.institution.findFirst({ where: { id: actor.institutionId, deletedAt: null, status: "ACTIVE" }, select: { id: true, account: { select: { credentialsChangedAt: true } } } })
-          : await database.user.findFirst({ where: { id: actor.userId, deletedAt: null, status: "ACTIVE" }, select: { id: true, credentialsChangedAt: true } });
-        const credentialsChangedAt = active && "account" in active ? active.account?.credentialsChangedAt : active && "credentialsChangedAt" in active ? active.credentialsChangedAt : null;
+        let active: boolean;
+        let credentialsChangedAt: Date | null | undefined;
+
+        if (actor.principalType === "INSTITUTION") {
+          const institution = await database.institution.findFirst({
+            where: { id: actor.institutionId, deletedAt: null, status: "ACTIVE" },
+            select: { id: true, account: { select: { credentialsChangedAt: true } } },
+          });
+          active = Boolean(institution);
+          credentialsChangedAt = institution?.account?.credentialsChangedAt;
+        } else {
+          const user = await database.user.findFirst({
+            where: { id: actor.userId, deletedAt: null, status: "ACTIVE" },
+            select: { id: true, credentialsChangedAt: true },
+          });
+          active = Boolean(user);
+          credentialsChangedAt = user?.credentialsChangedAt;
+        }
+
         const sessionPredatesPasswordChange = Boolean(credentialsChangedAt && actor.tokenIssuedAt && actor.tokenIssuedAt < Math.floor(credentialsChangedAt.getTime() / 1000));
         if (!active || sessionPredatesPasswordChange) {
           response.status(401).json({ code: "AUTH_INVALID", message: "This account is inactive or has been closed.", traceId: request.traceId });
