@@ -1,8 +1,10 @@
-// Expose the RAG package boundary to the application layer.
-export function createRagPipeline() {
-  // Compose embeddings, retrieval, prompt context, and generation adapters.
-}
-
-export function createRagMaintenancePipeline() {
-  // Compose approved-source ingestion and vector-index maintenance operations.
-}
+export * from "./types";
+export * from "./intent";
+export * from "./config";
+export * from "./embeddings";
+export * from "./generation";
+export * from "./knowledge-sources";
+export * from "./indexing";
+export * from "./retrieval";
+export * from "./prompt-context";
+export * from "./vector-store";

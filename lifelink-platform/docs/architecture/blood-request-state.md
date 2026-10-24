@@ -2,7 +2,7 @@
 
 ## States
 
-Created -> Under Review -> Searching/Matching -> Institutions Notified -> Offers Received -> Offer Evaluation -> Reserved -> In Transit -> Fulfilled.
+Created -> Under Review -> Searching/Matching -> Institutions Notified -> Offers Received -> Offer Evaluation -> Offer Accepted -> Reserved -> In Transit -> Fulfilled.
 
 ## Alternate Outcomes
 

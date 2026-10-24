@@ -12,6 +12,7 @@ import { registerOrganCoordinationRoutes } from "./modules/organ-coordination/ro
 import { registerConsentRoutes } from "./modules/consent/routes";
 import { registerAdminRoutes } from "./modules/admin/routes";
 import { registerAuditRoutes } from "./modules/audit/routes";
+import { registerRagRoutes } from "./modules/rag/routes";
 import { handleApiError } from "./middleware/error-handler";
 import { requestContext } from "./middleware/request-context";
 import { ApiError } from "./middleware/api-error";
@@ -41,6 +42,7 @@ export function registerRoutes(app: Express) {
   app.use("/api/requests/blood", registerBloodRequestRoutes());
   app.use("/api/emergency", registerEmergencyRoutes());
   app.use("/api/notifications", registerNotificationRoutes());
+  app.use("/api/rag", registerRagRoutes());
 }
 
 // Register security and parsing middleware before feature handlers.

@@ -564,6 +564,11 @@
 .facility-map-legend i.organ,.facility-dot.organ,.lifelink-marker-organ{background:#7552b5!important}
 .facility-map-legend i.hospital,.facility-dot.hospital,.lifelink-marker-hospital{background:#66817f!important}
 .lifelink-marker-blood,.lifelink-marker-organ,.lifelink-marker-hospital{border-color:#fff!important;box-shadow:0 2px 9px #123b3b55,0 0 0 3px #ffffffa6!important}
+.lifelink-marker-clinic{background:#0f9f8f!important;border-color:#fff!important;box-shadow:0 2px 9px #123b3b55,0 0 0 3px #ffffffa6!important}
+.lifelink-marker-pharmacy{background:#7b61a8!important;border-color:#fff!important;box-shadow:0 2px 9px #123b3b55,0 0 0 3px #ffffffa6!important}
+.lifelink-marker-emergency{background:#d93434!important;border-color:#fff!important;box-shadow:0 2px 9px #123b3b55,0 0 0 3px #ffffffa6!important}
+.lifelink-marker-other{background:#667085!important;border-color:#fff!important;box-shadow:0 2px 9px #123b3b55,0 0 0 3px #ffffffa6!important}
+.lifelink-marker.is-selected{z-index:1000!important;transform:scale(1.2);box-shadow:0 0 0 4px #facc15,0 2px 12px #123b3b88!important}
 .facility-dot.blood,.facility-dot.organ,.facility-dot.hospital{color:#fff}
 .facility-list{height:auto;max-height:none;overflow:visible}
 .facility-pagination{position:static;display:flex;align-items:center;justify-content:space-between;gap:8px;margin:10px -6px -5px;padding:10px 6px 5px;border-top:1px solid #edf2ef;background:#fff}

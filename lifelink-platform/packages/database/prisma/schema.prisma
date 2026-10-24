@@ -241,78 +241,85 @@ enum NotificationStatus {
   FAILED
 }
 
+enum AssistantMessageRole {
+  USER
+  ASSISTANT
+}
+
 model User {
-  id                   String               @id @default(uuid()) @db.Uuid
-  name                 String
-  email                String               @unique
-  phone                String
-  address              String?
-  passwordHash         String
-  credentialsChangedAt DateTime?
-  role                 UserRole
-  status               UserStatus           @default(ACTIVE)
-  deletedAt            DateTime?
-  notificationPreferences Json                @default("{\"workflow\":true,\"emergency\":true}")
-  createdAt            DateTime             @default(now())
-  updatedAt            DateTime             @updatedAt
-  donorProfile         DonorProfile?
-  recipientProfile     RecipientProfile?
-  administrator        Administrator?
-  createdRequests      Request[]            @relation("RequestCreator")
-  requestRecipients    RequestRecipient[]
-  notifications        Notification[]
-  documents            UserDocument[]
-  donations            Donation[]           @relation("DonorDonations")
-  auditEvents          AuditLog[]
-  organDonors          OrganDonor[]
-  consentResponses     OrganConsent[]       @relation("ConsentResponder")
-  organRecipients      OrganRecipient[]
-  consentRecords       OrganConsent[]       @relation("ConsentAuthor")
-  reviewedOrganMatches OrganMatch[]         @relation("OrganMatchReviewer")
-  respondedOrganOffers OrganOffer[]         @relation("OfferResponder")
-  organWorkflowEvents  OrganWorkflowEvent[]
-  workflowEvents       WorkflowEvent[]
+  id                      String                  @id @default(uuid()) @db.Uuid
+  name                    String
+  email                   String                  @unique
+  phone                   String
+  address                 String?
+  passwordHash            String
+  credentialsChangedAt    DateTime?
+  role                    UserRole
+  status                  UserStatus              @default(ACTIVE)
+  deletedAt               DateTime?
+  notificationPreferences Json                    @default("{\"workflow\":true,\"emergency\":true}")
+  createdAt               DateTime                @default(now())
+  updatedAt               DateTime                @updatedAt
+  donorProfile            DonorProfile?
+  recipientProfile        RecipientProfile?
+  administrator           Administrator?
+  createdRequests         Request[]               @relation("RequestCreator")
+  requestRecipients       RequestRecipient[]
+  notifications           Notification[]
+  documents               UserDocument[]
+  donations               Donation[]              @relation("DonorDonations")
+  auditEvents             AuditLog[]
+  organDonors             OrganDonor[]
+  consentResponses        OrganConsent[]          @relation("ConsentResponder")
+  organRecipients         OrganRecipient[]
+  consentRecords          OrganConsent[]          @relation("ConsentAuthor")
+  reviewedOrganMatches    OrganMatch[]            @relation("OrganMatchReviewer")
+  respondedOrganOffers    OrganOffer[]            @relation("OfferResponder")
+  organWorkflowEvents     OrganWorkflowEvent[]
+  workflowEvents          WorkflowEvent[]
+  assistantConversations  AssistantConversation[]
 
   @@index([role, status])
 }
 
 model Institution {
-  id                   String                    @id @default(uuid()) @db.Uuid
-  name                 String
-  type                 InstitutionType
-  address              String
-  latitude             Float?
-  longitude            Float?
-  contactPerson        String?
-  contactNumber        String?
-  notificationPreferences Json                @default("{\"workflow\":true,\"emergency\":true}")
-  deletedAt            DateTime?
-  status               InstitutionStatus         @default(PENDING_VERIFICATION)
-  createdAt            DateTime                  @default(now())
-  updatedAt            DateTime                  @updatedAt
-  account              InstitutionAccount?
-  institutionRequests  Request[]                 @relation("InstitutionRequestCreator")
-  notifications        Notification[]
-  auditEvents          AuditLog[]
-  workflowEvents       WorkflowEvent[]
-  hospitalProfile      HospitalProfile?
-  bloodBankProfile     BloodBankProfile?
-  organCentreProfile   OrganCentreProfile?
-  bloodInventory       BloodInventory[]
-  organInventory       OrganInventory[]
-  providerMatches      Match[]                   @relation("ProviderMatches")
-  donations            Donation[]                @relation("DonationInstitution")
-  allocations          Allocation[]
-  currentOrgans        OrganRecord[]             @relation("OrganCurrentLocation")
-  destinationOrgans    OrganRecord[]             @relation("OrganDestination")
-  offeringOrganOffers  OrganOffer[]              @relation("OfferOfferingCentre")
-  receivingOrganOffers OrganOffer[]              @relation("OfferReceivingCentre")
-  organProcurements    OrganProcurement[]
-  organWorkflowEvents  OrganWorkflowEvent[]
-  organDonors          OrganDonor[]
-  organRecords         OrganRecord[]
-  organRecipients      OrganRecipient[]
-  organPolicies        OrganPreservationPolicy[]
+  id                      String                    @id @default(uuid()) @db.Uuid
+  name                    String
+  type                    InstitutionType
+  address                 String
+  latitude                Float?
+  longitude               Float?
+  contactPerson           String?
+  contactNumber           String?
+  notificationPreferences Json                      @default("{\"workflow\":true,\"emergency\":true}")
+  deletedAt               DateTime?
+  status                  InstitutionStatus         @default(PENDING_VERIFICATION)
+  createdAt               DateTime                  @default(now())
+  updatedAt               DateTime                  @updatedAt
+  account                 InstitutionAccount?
+  institutionRequests     Request[]                 @relation("InstitutionRequestCreator")
+  notifications           Notification[]
+  auditEvents             AuditLog[]
+  workflowEvents          WorkflowEvent[]
+  hospitalProfile         HospitalProfile?
+  bloodBankProfile        BloodBankProfile?
+  organCentreProfile      OrganCentreProfile?
+  bloodInventory          BloodInventory[]
+  organInventory          OrganInventory[]
+  providerMatches         Match[]                   @relation("ProviderMatches")
+  donations               Donation[]                @relation("DonationInstitution")
+  allocations             Allocation[]
+  currentOrgans           OrganRecord[]             @relation("OrganCurrentLocation")
+  destinationOrgans       OrganRecord[]             @relation("OrganDestination")
+  offeringOrganOffers     OrganOffer[]              @relation("OfferOfferingCentre")
+  receivingOrganOffers    OrganOffer[]              @relation("OfferReceivingCentre")
+  organProcurements       OrganProcurement[]
+  organWorkflowEvents     OrganWorkflowEvent[]
+  organDonors             OrganDonor[]
+  organRecords            OrganRecord[]
+  organRecipients         OrganRecipient[]
+  organPolicies           OrganPreservationPolicy[]
+  assistantConversations  AssistantConversation[]
 
   @@index([type, status])
   @@index([latitude, longitude])
@@ -320,15 +327,15 @@ model Institution {
 
 // Organizations authenticate through their own account. They are not Users.
 model InstitutionAccount {
-  id            String      @id @default(uuid()) @db.Uuid
-  institutionId String      @unique @db.Uuid
-  email         String      @unique
-  phone         String
-  passwordHash  String
+  id                   String      @id @default(uuid()) @db.Uuid
+  institutionId        String      @unique @db.Uuid
+  email                String      @unique
+  phone                String
+  passwordHash         String
   credentialsChangedAt DateTime?
-  createdAt     DateTime    @default(now())
-  updatedAt     DateTime    @updatedAt
-  institution   Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  createdAt            DateTime    @default(now())
+  updatedAt            DateTime    @updatedAt
+  institution          Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
 }
 
 model DonorProfile {
@@ -647,7 +654,7 @@ model OrganDonor {
   userId              String?                  @db.Uuid
   institutionId       String                   @db.Uuid
   donorType           String
-  organType           OrganType              @default(OTHER)
+  organType           OrganType                @default(OTHER)
   consentStatus       ConsentStatus            @default(PENDING)
   authorizationStatus OrganAuthorizationStatus @default(PENDING)
   consentDate         DateTime?
@@ -691,38 +698,38 @@ model OrganConsent {
 }
 
 model OrganRecord {
-  id                      String               @id @default(uuid()) @db.Uuid
-  reference               String               @unique
-  donorId                 String               @db.Uuid
-  institutionId           String               @db.Uuid
-  organType               OrganType
-  status                  OrganStatus          @default(REGISTERED)
-  bloodGroup              BloodGroup?
-  retrievalTime           DateTime?
-  preservationStartTime   DateTime?
-  preservationMethod      PreservationMethod?
-  preservationSolution    String?
-  coldIschemiaStart       DateTime?
-  currentLocationId       String?              @db.Uuid
-  destinationCentreId     String?              @db.Uuid
-  allocatedRecipientId    String?              @db.Uuid
-  transplantScheduledAt   DateTime?
-  transplantCompletedAt   DateTime?
+  id                             String               @id @default(uuid()) @db.Uuid
+  reference                      String               @unique
+  donorId                        String               @db.Uuid
+  institutionId                  String               @db.Uuid
+  organType                      OrganType
+  status                         OrganStatus          @default(REGISTERED)
+  bloodGroup                     BloodGroup?
+  retrievalTime                  DateTime?
+  preservationStartTime          DateTime?
+  preservationMethod             PreservationMethod?
+  preservationSolution           String?
+  coldIschemiaStart              DateTime?
+  currentLocationId              String?              @db.Uuid
+  destinationCentreId            String?              @db.Uuid
+  allocatedRecipientId           String?              @db.Uuid
+  transplantScheduledAt          DateTime?
+  transplantCompletedAt          DateTime?
   transplantResponsibleReference String?
-  qualityStatus           String?
-  medicalAssessmentStatus String?
-  notes                   String?
-  createdAt               DateTime             @default(now())
-  updatedAt               DateTime             @updatedAt
-  donor                   OrganDonor           @relation(fields: [donorId], references: [id])
-  institution             Institution          @relation(fields: [institutionId], references: [id])
-  currentLocation         Institution?         @relation("OrganCurrentLocation", fields: [currentLocationId], references: [id])
-  destinationCentre       Institution?         @relation("OrganDestination", fields: [destinationCentreId], references: [id])
-  allocatedRecipient      OrganRecipient?      @relation(fields: [allocatedRecipientId], references: [id])
-  matches                 OrganMatch[]
-  offers                  OrganOffer[]
-  procurements            OrganProcurement[]
-  events                  OrganWorkflowEvent[]
+  qualityStatus                  String?
+  medicalAssessmentStatus        String?
+  notes                          String?
+  createdAt                      DateTime             @default(now())
+  updatedAt                      DateTime             @updatedAt
+  donor                          OrganDonor           @relation(fields: [donorId], references: [id])
+  institution                    Institution          @relation(fields: [institutionId], references: [id])
+  currentLocation                Institution?         @relation("OrganCurrentLocation", fields: [currentLocationId], references: [id])
+  destinationCentre              Institution?         @relation("OrganDestination", fields: [destinationCentreId], references: [id])
+  allocatedRecipient             OrganRecipient?      @relation(fields: [allocatedRecipientId], references: [id])
+  matches                        OrganMatch[]
+  offers                         OrganOffer[]
+  procurements                   OrganProcurement[]
+  events                         OrganWorkflowEvent[]
 
   @@index([organType, status, bloodGroup])
   @@index([institutionId, status, createdAt])
@@ -758,20 +765,20 @@ model OrganRecipient {
 }
 
 model MedicalDocument {
-  id            String         @id @default(uuid()) @db.Uuid
-  donorId       String?        @db.Uuid
-  recipientId   String?        @db.Uuid
+  id            String          @id @default(uuid()) @db.Uuid
+  donorId       String?         @db.Uuid
+  recipientId   String?         @db.Uuid
   bucket        String
-  objectPath    String         @unique
+  objectPath    String          @unique
   fileName      String
   contentType   String
   fileSize      Int
-  uploadedById  String?        @db.Uuid
-  institutionId String?        @db.Uuid
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
+  uploadedById  String?         @db.Uuid
+  institutionId String?         @db.Uuid
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
   deletedAt     DateTime?
-  donor         OrganDonor?    @relation(fields: [donorId], references: [id], onDelete: Cascade)
+  donor         OrganDonor?     @relation(fields: [donorId], references: [id], onDelete: Cascade)
   recipient     OrganRecipient? @relation(fields: [recipientId], references: [id], onDelete: Cascade)
 
   @@index([donorId, deletedAt, createdAt])
@@ -902,4 +909,33 @@ model OrganWorkflowEvent {
 
   @@index([organId, createdAt])
   @@index([eventType, createdAt])
+}
+
+model AssistantConversation {
+  id                 String             @id @default(uuid()) @db.Uuid
+  ownerUserId        String?            @db.Uuid
+  ownerInstitutionId String?            @db.Uuid
+  title              String             @default("New chat") @db.VarChar(120)
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+  ownerUser          User?              @relation(fields: [ownerUserId], references: [id], onDelete: Cascade)
+  ownerInstitution   Institution?       @relation(fields: [ownerInstitutionId], references: [id], onDelete: Cascade)
+  messages           AssistantMessage[]
+
+  @@index([ownerUserId, updatedAt])
+  @@index([ownerInstitutionId, updatedAt])
+}
+
+model AssistantMessage {
+  id              String                @id @default(uuid()) @db.Uuid
+  conversationId  String                @db.Uuid
+  clientMessageId String                @db.Uuid
+  role            AssistantMessageRole
+  content         String                @db.Text
+  result          Json?
+  createdAt       DateTime              @default(now())
+  conversation    AssistantConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@unique([conversationId, clientMessageId, role])
+  @@index([conversationId, createdAt])
 }
