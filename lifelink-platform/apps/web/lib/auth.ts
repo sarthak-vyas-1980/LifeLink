@@ -1,5 +1,6 @@
 import { disconnectRealtime } from "./socket-client";
 import { requestApi } from "./api-client";
+import { clearAssistantActiveConversation, clearAssistantConversation } from "./assistant-conversation-store";
 
 export interface SessionUser { id: string; name: string; email: string; role: string; principalType?: "USER" | "INSTITUTION"; accountRole?: "USER" | "ADMIN"; institutionId?: string | null; capabilities?: { blood: boolean; organ: boolean } }
 export interface Session { token: string; user: SessionUser }
@@ -22,5 +23,13 @@ export function getCurrentSession(): Session | null {
 export function saveCurrentSession(session: Session) { localStorage.setItem(STORAGE_KEY, JSON.stringify(session)); }
 export function resolveRoleDestination(role?: string) { return role ? "/dashboard" : "/login"; }
 export async function signOut() {
-  try { await requestApi("/api/auth/logout", { method: "POST" }); } finally { disconnectRealtime(); localStorage.removeItem(STORAGE_KEY); }
+  const current = getCurrentSession();
+  try { await requestApi("/api/auth/logout", { method: "POST" }); } finally {
+    disconnectRealtime();
+    if (current && typeof window !== "undefined") {
+      try { clearAssistantConversation(window.sessionStorage, current.user.id); } catch { /* Browser storage can be unavailable. */ }
+      clearAssistantActiveConversation(window.localStorage, current.user.id);
+    }
+    localStorage.removeItem(STORAGE_KEY);
+  }
 }

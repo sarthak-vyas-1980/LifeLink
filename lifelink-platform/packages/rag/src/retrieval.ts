@@ -1,14 +1,25 @@
-// Search the vector store for relevant approved chunks.
-export function retrieveRelevantChunks() {
-  // Apply semantic similarity, metadata filters, and role-aware access rules.
+import { createEmbedding } from "./embeddings";
+import { getRagConfig } from "./config";
+import type { LifeLinkRole, RetrievedKnowledgeChunk } from "./types";
+import { retrieveVectorMatches } from "./vector-store";
+
+export async function retrieveRelevantChunks(
+  query: string,
+  role: LifeLinkRole,
+): Promise<RetrievedKnowledgeChunk[]> {
+  const normalized = query.trim();
+  if (!normalized) return [];
+  const config = getRagConfig();
+  const queryEmbedding = await createEmbedding(normalized, "query");
+  return retrieveVectorMatches(
+    queryEmbedding,
+    [role],
+    config.similarityThreshold,
+    config.matchCount,
+  );
 }
 
-// Index or replace a knowledge source in the vector store.
-export function indexKnowledgeSource() {
-  // Keep indexing separate from the operational PostgreSQL source of truth.
-}
-
-// Remove a source and its derived chunks when authorized.
-export function removeKnowledgeSource() {
-  // Preserve maintenance history and avoid deleting operational records.
+export async function listKnowledgeSourcesForRole(role: LifeLinkRole) {
+  const { listIndexedKnowledgeSources } = await import("./vector-store");
+  return listIndexedKnowledgeSources(role);
 }
