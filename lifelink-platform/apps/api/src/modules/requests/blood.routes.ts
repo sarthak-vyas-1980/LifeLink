@@ -142,7 +142,7 @@ export async function startBloodMatching(request: Request, response: Response) {
   });
 }
 
-// Create a request in the initial review state.
+// Create a standard blood request and immediately search eligible inventory.
 export async function createBloodRequest(request: Request, response: Response) {
   const created = await createRequest({
     requestType: RequestType.BLOOD,
@@ -155,6 +155,7 @@ export async function createBloodRequest(request: Request, response: Response) {
     longitude: request.body.longitude,
     radiusKm: request.body.radiusKm,
     contactNumber: request.body.contactNumber,
+    status: "UNDER_REVIEW",
     ...(request.auth?.userId
       ? { createdBy: { connect: { id: request.auth.userId } } }
       : { createdByInstitution: { connect: { id: request.auth?.institutionId } } }),
@@ -168,7 +169,12 @@ export async function createBloodRequest(request: Request, response: Response) {
     entityId: created.id,
     metadata: { requestType: created.requestType, priority: created.priority },
   });
-  response.status(201).json(serializeRequestForActor(created, request.auth));
+  const outcome = await startBloodMatchingWorkflow(created.id, request.auth?.userId, request.body.radiusKm);
+  response.status(201).json({
+    request: serializeRequestForActor(outcome.request!, request.auth),
+    matching: serializeBloodMatchingResult(outcome.matching),
+    coordinationOnly: true,
+  });
 }
 
 // Return only request fields allowed for the current actor.

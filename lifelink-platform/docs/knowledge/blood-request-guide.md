@@ -5,8 +5,7 @@
 The documented blood-request lifecycle is:
 
 1. Created
-2. Under Review
-3. Searching/Matching
+2. Searching/Matching (starts automatically after submission)
 4. Institutions Notified
 5. Offers Received
 6. Offer Evaluation
@@ -23,7 +22,7 @@ A request records the required blood group, component or type, quantity, locatio
 
 ## Matching and offers
 
-The current blood matching service searches eligible, available institutional blood inventory using the request requirements and location criteria. The current matcher does not search a separate opted-in individual blood-donor source. Results are potential matches, not a promise of fulfilment. A participating institution may respond to an offer, and an authorized requester evaluates applicable offers. The workflow records status changes.
+The current blood matching service searches eligible, available institutional blood inventory as soon as a standard or emergency request is submitted, using the request requirements and location criteria. Administrator approval is not required to begin matching. The current matcher does not search a separate opted-in individual blood-donor source. Results are potential matches, not a promise of fulfilment. A participating institution must confirm an offer, and an authorized requester evaluates applicable offers. The workflow records status changes.
 
 ## Reservation, dispatch, and receipt
 

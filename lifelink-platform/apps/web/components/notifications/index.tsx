@@ -19,6 +19,16 @@ type Notification = {
     bloodGroup?: string | null;
     requiredBy?: string | null;
     institutionName?: string | null;
+    requestReference?: string | null;
+    component?: string | null;
+    quantity?: number | null;
+    priority?: string | null;
+    location?: string | null;
+    fromStatus?: string | null;
+    toStatus?: string | null;
+    offerStatus?: string | null;
+    unitsAvailable?: number | null;
+    unitsReserved?: number | null;
   } | null;
 };
 
@@ -94,6 +104,19 @@ export default function NotificationsInbox() {
                       <time>{new Date(item.createdAt).toLocaleString()}</time>
                     </div>
                     <p>{item.message}</p>
+                    {item.eventType?.startsWith("REQUEST_") || item.eventType === "OFFER_STATUS_CHANGED" || item.eventType === "RESERVATION_EXPIRED" ? (
+                      item.payload?.bloodGroup && (
+                        <div className="notification-workflow-details">
+                          <span><small>Request</small><b>{item.payload.quantity ?? "—"} × {formatBloodGroup(item.payload.bloodGroup)} {formatComponent(item.payload.component)}</b></span>
+                          {item.payload.location && <span><small>Location</small><b>{item.payload.location}</b></span>}
+                          {item.payload.institutionName && <span><small>Institution</small><b>{item.payload.institutionName}</b></span>}
+                          {item.payload.toStatus && <span><small>Workflow step</small><b>{humanizeStatus(item.payload.toStatus)}</b></span>}
+                          {item.payload.offerStatus && <span><small>Offer status</small><b>{humanizeStatus(item.payload.offerStatus)}</b></span>}
+                          {typeof item.payload.unitsAvailable === "number" && <span><small>Available stock</small><b>{item.payload.unitsAvailable} units</b></span>}
+                          {typeof item.payload.unitsReserved === "number" && item.payload.unitsReserved > 0 && <span><small>Reserved stock</small><b>{item.payload.unitsReserved} units</b></span>}
+                        </div>
+                      )
+                    ) : null}
                     {item.eventType === "EMERGENCY_ORGAN_RECIPIENT_BROADCAST" && (
                       <details className="notification-emergency-details">
                         <summary><span>View request details</span><span>Hide request details</span></summary>
@@ -154,4 +177,12 @@ function formatBloodGroup(value?: string | null) {
     : value.endsWith("_NEGATIVE")
       ? `${value.slice(0, -"_NEGATIVE".length)}−`
       : value.replaceAll("_", " ");
+}
+
+function formatComponent(value?: string | null) {
+  return value?.replaceAll("_", " ").toLowerCase() ?? "blood";
+}
+
+function humanizeStatus(value: string) {
+  return value.toLowerCase().replaceAll("_", " ").replace(/^./, (letter) => letter.toUpperCase());
 }
