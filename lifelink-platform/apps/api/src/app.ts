@@ -9,6 +9,7 @@ import { registerEmergencyRoutes } from "./modules/emergency/routes";
 import { registerUserRoutes } from "./modules/users/routes";
 import { registerInstitutionRoutes } from "./modules/institutions/routes";
 import { registerOrganCoordinationRoutes } from "./modules/organ-coordination/routes";
+import { registerDonationRoutes } from "./modules/donations/routes";
 import { registerConsentRoutes } from "./modules/consent/routes";
 import { registerAdminRoutes } from "./modules/admin/routes";
 import { registerAuditRoutes } from "./modules/audit/routes";
@@ -37,6 +38,7 @@ export function registerRoutes(app: Express) {
   app.use("/api/inventory/blood", registerBloodInventoryRoutes());
   app.use("/api/organs", registerOrganCoordinationRoutes());
   app.use("/api/organ-consents", registerConsentRoutes());
+  app.use("/api/blood-donations", registerDonationRoutes());
   app.use("/api/admin", registerAdminRoutes());
   app.use("/api/audit", registerAuditRoutes());
   app.use("/api/requests/blood", registerBloodRequestRoutes());

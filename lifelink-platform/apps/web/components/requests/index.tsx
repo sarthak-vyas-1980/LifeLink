@@ -131,7 +131,7 @@ export function OfferReview({ offers, candidates, request, role, institutionId, 
 	</div>;
 }
 
-export default function RequestsWorkspace() {
+export default function RequestsWorkspace({ embedded = false }: { embedded?: boolean }) {
 	const [requests, setRequests] = useState<BloodRequest[]>([]);
 	const [selectedId, setSelectedId] = useState("");
 	const [offers, setOffers] = useState<Offer[]>([]);
@@ -234,7 +234,7 @@ export default function RequestsWorkspace() {
 	const canReopen = Boolean(selected && canRequesterAct && reopenableStatuses.includes(selected.status));
 	const canMatch = Boolean(selected && canRequesterAct && ["CREATED", "UNDER_REVIEW", "REOPENED"].includes(selected.status));
 
-	return <div className="page-stack"><header className="page-heading"><div><span className="eyebrow">BLOOD COORDINATION</span><h1>Requests & offers</h1><p>Submit a request, review provider responses, and follow each confirmed step.</p></div></header>
+	return <div className={embedded ? "blood-service-panel" : "page-stack"}>{!embedded && <header className="page-heading"><div><span className="eyebrow">BLOOD COORDINATION</span><h1>Requests & offers</h1><p>Submit a request, review provider responses, and follow each confirmed step.</p></div></header>}
 		{canCreateRequest ? <RequestForm onCreated={created} /> : <section className="panel"><div className="panel-heading"><div><span className="eyebrow">PROVIDER WORKSPACE</span><h2>Respond to matched blood requests</h2><p>New blood requests are created by users and hospitals. Your institution will see requests when matching identifies your inventory.</p></div></div></section>}
 		<div className="workflow-grid"><section className="panel request-list"><div className="panel-heading"><div><span className="eyebrow">WORKFLOW</span><h2>Requests you can access</h2></div><button className="button quiet" onClick={() => void refresh()} disabled={busy}>Refresh</button></div>{requests.length === 0 ? <p className="empty">Requests you are permitted to coordinate will appear here.</p> : requests.map((item) => <button key={item.id} className={`request-row ${selectedId === item.id ? "active" : ""}`} onClick={() => selectRequest(item.id)}><span><strong>{pretty(item.bloodGroup)} · {pretty(item.component)}</strong><small>{item.quantity} units · {item.location}</small></span><span className={`pill ${item.status.toLowerCase()}`}>{statusLabel(item.status)}</span></button>)}</section>
 			<section className="panel workflow-detail">{selected ? <><div className="panel-heading"><div><span className="eyebrow">REQUEST DETAIL</span><h2>{pretty(selected.bloodGroup)} {pretty(selected.component)}</h2><p>{selected.quantity} units · {selected.priority} · {selected.location}</p></div><span className={`pill ${selected.status.toLowerCase()}`}>{statusLabel(selected.status)}</span></div><RequestStateTimeline status={selected.status} /><div className="action-bar">

@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { ArrowUpRight, ClipboardList, HeartPulse, MapPinned, ShieldCheck, Building2, Clock3, RefreshCw } from "lucide-react";
+import { ArrowUpRight, HeartPulse, MapPinned, ShieldCheck, Building2, Clock3, RefreshCw } from "lucide-react";
 import { requestApi } from "../../../lib/api-client";
 import { getCurrentSession } from "../../../lib/auth";
 import { InstitutionRequestAnalytics } from "../../../components/institution/request-analytics";
@@ -10,7 +10,7 @@ type OverviewAccount = {
 	role: string;
 	principalType?: string;
 	institutionId?: string | null;
-	capabilities?: { organ?: boolean };
+	capabilities?: { blood?: boolean; organ?: boolean };
 };
 
 type OverviewAction = {
@@ -66,18 +66,19 @@ export default function DashboardPage() {
 	const personalUser = account?.role === "USER" || (account?.role === "ADMINISTRATOR" && account.principalType === "USER");
 	const institutionUser = Boolean(account?.institutionId);
 	const institutionAccount = account?.principalType === "INSTITUTION";
+	const bloodDonationWorkspace = !institutionUser || account?.role === "ADMINISTRATOR" || Boolean(account?.capabilities?.blood);
 	const organWorkspace = account?.role === "ORGAN_CENTRE_USER" || account?.role === "ADMINISTRATOR" || (account?.role === "HOSPITAL_USER" && account.capabilities?.organ);
 
 	const actions: OverviewAction[] = institutionUser
 		? [
 			{ href: "/institution", title: "Institution workspace", description: "Open service dashboards and operational records.", icon: Building2 },
-			{ href: "/requests", title: "Blood requests", description: "Review requests and follow provider coordination.", icon: ClipboardList },
+			...(bloodDonationWorkspace ? [{ href: "/blood-services", title: "Blood services", description: "Coordinate requests and review blood donor interests.", icon: HeartPulse }] : []),
 			...(organWorkspace ? [{ href: "/organ-centre", title: "Organ coordination", description: "Manage donor, recipient, and organ workflows.", icon: HeartPulse }] : []),
 		]
 		: [
 			...(account?.role === "ADMINISTRATOR" ? [{ href: "/admin", title: "Administration", description: "Review platform activity and manage institutions.", icon: ShieldCheck }] : []),
 			{ href: "/map", title: "Find an institution", description: "Explore nearby hospitals and blood banks.", icon: MapPinned },
-			{ href: "/requests", title: "Blood requests", description: "Create a request or track your existing requests.", icon: ClipboardList },
+			{ href: "/blood-services", title: "Blood services", description: account?.role === "ADMINISTRATOR" ? "Review requests and donor activity across the platform." : "Request blood, donate blood, and follow both workflows.", icon: HeartPulse },
 			...(personalUser ? [{ href: "/organ-services", title: "Organ services", description: "Manage donor interest or recipient requirements.", icon: HeartPulse }] : []),
 		];
 
