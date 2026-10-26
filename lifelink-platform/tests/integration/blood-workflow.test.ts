@@ -8,7 +8,7 @@ test("blood workflow authorization, retry, expiry, inventory safety, and fulfilm
   process.env.DATABASE_URL = testDatabaseUrl!;
   const { database, reserveBloodUnits } = await import("../../packages/database/src/index");
   const { BloodComponent, BloodGroup, InstitutionStatus, InstitutionType, RequestPriority, RequestStatus, RequestType, UserRole } = await import("@prisma/client");
-  const { reviewBloodRequest, respondToBloodOffer, evaluateBloodOffer, dispatchBloodRequest, receiveBloodRequest, expireBloodReservations } = await import("../../apps/api/src/modules/requests/blood-workflow.service");
+  const { reviewBloodRequest, respondToBloodOffer, evaluateBloodOffer, fulfillBloodRequest, expireBloodReservations } = await import("../../apps/api/src/modules/requests/blood-workflow.service");
   const { startBloodMatchingWorkflow } = await import("../../apps/api/src/modules/requests/matching.service");
 
   const suffix = randomUUID();
@@ -21,13 +21,14 @@ test("blood workflow authorization, retry, expiry, inventory safety, and fulfilm
     const bloodBank = await database.institution.create({ data: { name: `Test Blood Bank ${suffix}`, type: InstitutionType.BLOOD_BANK, status: InstitutionStatus.ACTIVE, address: "Test Centre", latitude: 10, longitude: 77 } });
     const remoteBank = await database.institution.create({ data: { name: `Remote Blood Bank ${suffix}`, type: InstitutionType.BLOOD_BANK, status: InstitutionStatus.ACTIVE, address: "Remote Centre", latitude: 10.75, longitude: 77 } });
     institutionIds.push(hospital.id, bloodBank.id, remoteBank.id);
-    const requester = await database.user.create({ data: { name: "Workflow Requester", email: `requester-${suffix}@example.test`, passwordHash: "not-used-by-test", role: UserRole.HOSPITAL_USER, institutionId: hospital.id } });
-    const provider = await database.user.create({ data: { name: "Workflow Provider", email: `provider-${suffix}@example.test`, passwordHash: "not-used-by-test", role: UserRole.BLOOD_BANK_USER, institutionId: bloodBank.id } });
-    const admin = await database.user.create({ data: { name: "Workflow Admin", email: `admin-${suffix}@example.test`, passwordHash: "not-used-by-test", role: UserRole.ADMINISTRATOR } });
+    const requester = await database.user.create({ data: { name: "Workflow Requester", email: `requester-${suffix}@example.test`, phone: `+100${suffix.slice(0, 8)}`, passwordHash: "not-used-by-test", role: UserRole.USER } });
+    const provider = await database.user.create({ data: { name: "Workflow Provider", email: `provider-${suffix}@example.test`, phone: `+200${suffix.slice(0, 8)}`, passwordHash: "not-used-by-test", role: UserRole.USER } });
+    const admin = await database.user.create({ data: { name: "Workflow Admin", email: `admin-${suffix}@example.test`, phone: `+300${suffix.slice(0, 8)}`, passwordHash: "not-used-by-test", role: UserRole.ADMIN } });
     createdUserIds.push(requester.id, provider.id, admin.id);
-    const requesterActor = { userId: requester.id, role: "HOSPITAL_USER" as const, institutionId: hospital.id };
-    const providerActor = { userId: provider.id, role: "BLOOD_BANK_USER" as const, institutionId: bloodBank.id };
-    const adminActor = { userId: admin.id, role: "ADMINISTRATOR" as const };
+    const requesterActor = { userId: requester.id, role: "USER" as const, principalType: "USER" as const };
+    const providerActor = { userId: provider.id, role: "BLOOD_BANK_USER" as const, principalType: "INSTITUTION" as const, institutionId: bloodBank.id, capabilities: { blood: true, organ: false } };
+    const remoteProviderActor = { userId: provider.id, role: "BLOOD_BANK_USER" as const, principalType: "INSTITUTION" as const, institutionId: remoteBank.id, capabilities: { blood: true, organ: false } };
+    const adminActor = { userId: admin.id, role: "ADMINISTRATOR" as const, principalType: "USER" as const };
     const stock = await database.bloodInventory.create({ data: { institutionId: bloodBank.id, bloodGroup: BloodGroup.O_POSITIVE, component: BloodComponent.RED_BLOOD_CELLS, unitsAvailable: 10, expiryDate: new Date(Date.now() + 7 * 86_400_000) } });
     const remoteStock = await database.bloodInventory.create({ data: { institutionId: remoteBank.id, bloodGroup: BloodGroup.AB_NEGATIVE, component: BloodComponent.RED_BLOOD_CELLS, unitsAvailable: 8, expiryDate: new Date(Date.now() + 7 * 86_400_000) } });
     inventoryIds.push(stock.id, remoteStock.id);
@@ -41,8 +42,7 @@ test("blood workflow authorization, retry, expiry, inventory safety, and fulfilm
     const matchId = candidates.matching.candidates[0]?.matchId;
     assert.ok(matchId);
 
-    await assert.rejects(respondToBloodOffer(request.id, matchId, "ACCEPT", { userId: "outsider", role: "BLOOD_BANK_USER", institutionId: remoteBank.id }), (error: any) => error.status === 403);
-    await assert.rejects(dispatchBloodRequest(request.id, providerActor), (error: any) => error.status === 409);
+    await assert.rejects(respondToBloodOffer(request.id, matchId, "ACCEPT", remoteProviderActor), (error: any) => error.status === 403);
     await respondToBloodOffer(request.id, matchId, "ACCEPT", providerActor);
     await evaluateBloodOffer(request.id, matchId, "ACCEPT", requesterActor);
     let inventory = await database.bloodInventory.findUniqueOrThrow({ where: { id: stock.id } });
@@ -50,8 +50,7 @@ test("blood workflow authorization, retry, expiry, inventory safety, and fulfilm
     await assert.rejects(database.$transaction((tx) => reserveBloodUnits(tx, stock.id, 8)), /unavailable/);
     inventory = await database.bloodInventory.findUniqueOrThrow({ where: { id: stock.id } });
     assert.deepEqual([inventory.unitsAvailable, inventory.reservedUnits], [7, 3]);
-    await dispatchBloodRequest(request.id, providerActor);
-    const fulfilled = await receiveBloodRequest(request.id, requesterActor);
+    const fulfilled = await fulfillBloodRequest(request.id, providerActor);
     assert.equal(fulfilled.status, RequestStatus.FULFILLED);
     inventory = await database.bloodInventory.findUniqueOrThrow({ where: { id: stock.id } });
     assert.deepEqual([inventory.unitsAvailable, inventory.reservedUnits], [7, 0]);

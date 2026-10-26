@@ -57,9 +57,9 @@ test("Gemini intent understanding uses validated structured output and recent co
   const oldValues = new Map(names.map((name) => [name, process.env[name]]));
   const oldFetch = globalThis.fetch;
   for (const name of names) process.env[name] = name === "SUPABASE_URL" ? "https://unit-test.supabase.co" : "unit-test";
-  let requestBody: Record<string, unknown> | null = null;
+  const captured = { requestBody: null as Record<string, unknown> | null };
   globalThis.fetch = async (_input, init) => {
-    requestBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+    captured.requestBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
     return Response.json({ candidates: [{ content: { parts: [{ text: JSON.stringify({ intent: "LIVE_INVENTORY" }) }] } }] });
   };
   try {
@@ -68,10 +68,10 @@ test("Gemini intent understanding uses validated structured output and recent co
       { role: "assistant", content: "How many units did the treating team specify?" },
     ]);
     assert.equal(intent, "LIVE_INVENTORY");
-    const contents = requestBody?.contents as Array<{ parts: Array<{ text: string }> }>;
+    const contents = captured.requestBody?.contents as Array<{ parts: Array<{ text: string }> }>;
     assert.match(contents[0].parts[0].text, /"Two units"/);
     assert.match(contents[0].parts[0].text, /B\+ blood in Indore/);
-    const config = requestBody?.generationConfig as Record<string, unknown>;
+    const config = captured.requestBody?.generationConfig as Record<string, unknown>;
     assert.equal(config.responseMimeType, "application/json");
     assert.ok(config.responseSchema);
   } finally {
@@ -298,6 +298,16 @@ test("urgent blood detail extraction carries supplied group, component, units, a
   ]);
   assert.equal(quantityReply.component, "PLASMA");
   assert.equal(quantityReply.units, 2);
+});
+
+test("urgent blood assistance asks for an unknown blood group instead of assuming one", () => {
+  const details = extractUrgentBloodDetails("I urgently need blood.");
+  assert.equal(details.bloodGroup, undefined);
+  const outcome = formatUrgentBloodAssistance({ details, facilities: [], inventory: [], actorCanCreateRequest: true });
+  assert.match(outcome.answer, /blood group/i);
+  assert.doesNotMatch(outcome.answer, /\b(?:A|B|AB|O)[+-]\b/i);
+  assert.equal(outcome.needsClarification, true);
+  assert.notEqual(outcome.handoff?.href, "/requests");
 });
 
 test("facility discovery builds bounded OpenStreetMap queries and handles provider setup and failures", async () => {
@@ -620,6 +630,7 @@ test("retrieval-backed medical and synthetic answers are attributed and unsuppor
   const oldValues = new Map(names.map((name) => [name, process.env[name]]));
   const oldFetch = globalThis.fetch;
   let fixture: "medical" | "synthetic" | "empty" = "medical";
+  let groundedGenerationCalls = 0;
   for (const name of names) process.env[name] = name === "SUPABASE_URL" ? "https://unit-test.supabase.co" : "unit-test";
   globalThis.fetch = async (input, init) => {
     const url = String(input);
@@ -642,6 +653,8 @@ test("retrieval-backed medical and synthetic answers are attributed and unsuppor
         const intent = message.includes("asthma") ? "MEDICAL_OR_CLINICAL" : "KNOWLEDGE";
         return Response.json({ candidates: [{ content: { parts: [{ text: JSON.stringify({ intent }) }] } }] });
       }
+      groundedGenerationCalls += 1;
+      if (fixture === "empty") return Response.json({ candidates: [{ content: { parts: [{ text: "Hallucinated unsupported medical claim." }] } }] });
       return Response.json({ candidates: [{ content: { parts: [{ text: "The retrieved passage states this information." }] } }] });
     }
     throw new Error("Unexpected mocked request");
@@ -659,10 +672,13 @@ test("retrieval-backed medical and synthetic answers are attributed and unsuppor
     assert.equal(synthetic.sources[0]?.pageNumbers?.[0], 8);
 
     fixture = "empty";
+    const callsBeforeUnsupportedQuestion = groundedGenerationCalls;
     const missing = await generateAssistantResponse({ message: "What is asthma?", actor, history: [] });
     assert.equal(missing.knowledgeUsed, false);
     assert.match(missing.answer, /couldn't find a relevant passage/i);
     assert.match(missing.answer, /external web search (?:is not|isn't) configured/i);
+    assert.equal(groundedGenerationCalls, callsBeforeUnsupportedQuestion, "without evidence the free-form LLM must not be called");
+    assert.doesNotMatch(missing.answer, /hallucinated unsupported medical claim/i);
   } finally {
     globalThis.fetch = oldFetch;
     for (const [name, value] of oldValues) {

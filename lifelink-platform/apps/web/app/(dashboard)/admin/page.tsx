@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
-import { ArrowRight, Building2, HeartPulse, RefreshCw, ShieldCheck } from "lucide-react";
+import { ArrowRight, Building2, Droplets, HeartPulse, RefreshCw, ShieldCheck } from "lucide-react";
 import { requestApi } from "../../../lib/api-client";
 import { WorkflowPath } from "../../../components/organ/workflow-progress";
 import { InstitutionAnalyticsChart } from "./institution-analytics-chart";
@@ -19,7 +19,7 @@ export default function AdminPage() {
     (b.analytics.handledRequests + b.analytics.bloodRequests) - (a.analytics.handledRequests + a.analytics.bloodRequests) || a.name.localeCompare(b.name),
   );
   if (!data && !error) return <main className="page-stack admin-workspace"><section className="panel">Loading administrator analyticsÃ¢â‚¬Â¦</section></main>;
-  return <main className="page-stack institution-workspace admin-workspace"><header className="welcome-banner"><div><span className="eyebrow">SYSTEM ADMINISTRATION</span><h1>Platform operations</h1><p>Institution management, system wide organ coordination and audit activity.</p></div><button className="button" onClick={load}><RefreshCw size={14}/> Refresh</button></header><WorkflowPath/>
+  return <main className="page-stack institution-workspace admin-workspace"><header className="welcome-banner"><div><span className="eyebrow">SYSTEM ADMINISTRATION</span><h1>Platform operations</h1><p>Institution management, system wide organ coordination and audit activity.</p></div><div className="offer-actions"><Link className="button primary" href="/blood-services"><Droplets size={15}/> Blood services</Link><button className="button" onClick={load}><RefreshCw size={14}/> Refresh</button></div></header><WorkflowPath/>
     {error && <div className="error" role="alert">{error}</div>}
     {!data && <section className="panel admin-institution-performance"><div className="panel-heading"><div><span className="eyebrow">INSTITUTION MANAGEMENT</span><h2>Institution performance</h2><p>Performance preview for up to five institutions.</p></div><Link className="button" href="/admin/institutions">All institutions <ArrowRight size={14}/></Link></div><p>Institution data could not be loaded. Use Refresh to try again.</p></section>}
     {data && <><div className="metric-grid"><Metric icon={<Building2/>} title="INSTITUTIONS" value={data.institutions.length} note={`${data.institutionStatus.ACTIVE ?? 0} active Ã‚Â· ${data.institutionStatus.PENDING_VERIFICATION ?? 0} pending review`}/><Metric icon={<HeartPulse/>} title="ORGAN RECORDS" value={data.organMetrics.total ?? 0} note={`${data.organMetrics.activeWorkflows ?? 0} active workflows`}/><Metric icon={<ShieldCheck/>} title="ACTIVE OFFERS" value={data.organMetrics.activeOffers ?? 0} note={`${data.organMetrics.acceptedOffers ?? 0} accepted`}/><Metric icon={<HeartPulse/>} title="PROCUREMENT" value={data.organMetrics.procurementVolume ?? 0} note={`${data.organMetrics.completed ?? 0} organ workflows completed`}/></div>

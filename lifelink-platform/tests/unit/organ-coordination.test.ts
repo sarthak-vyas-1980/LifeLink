@@ -8,8 +8,33 @@ test("organ transitions reject skipping procurement and terminal-state regressio
 	assert.equal(isOrganTransitionAllowed(OrganStatus.ACCEPTED, OrganStatus.RETRIEVED), false);
 	assert.equal(isOrganTransitionAllowed(OrganStatus.COMPLETED, OrganStatus.AVAILABLE), false);
 	assert.equal(isOrganTransitionAllowed(OrganStatus.PRESERVING, OrganStatus.FINAL_ASSESSMENT), true);
-	assert.equal(isOrganTransitionAllowed(OrganStatus.PRESERVING, OrganStatus.IN_TRANSIT), false);
-	assert.equal(isOrganTransitionAllowed(OrganStatus.IN_TRANSIT, OrganStatus.ARRIVED), false);
+	assert.equal(isOrganTransitionAllowed(OrganStatus.ACCEPTED, OrganStatus.RETRIEVED), false);
+	assert.equal(isOrganTransitionAllowed(OrganStatus.RETRIEVED, OrganStatus.PRESERVING), true);
+});
+
+test("every organ status pair matches the explicit coordination graph", () => {
+	const graph: Record<OrganStatus, OrganStatus[]> = {
+		REGISTERED: [OrganStatus.ASSESSMENT_PENDING, OrganStatus.CANCELLED],
+		ASSESSMENT_PENDING: [OrganStatus.ELIGIBLE_FOR_COORDINATION, OrganStatus.UNAVAILABLE],
+		ELIGIBLE_FOR_COORDINATION: [OrganStatus.AVAILABLE, OrganStatus.MATCHING, OrganStatus.OFFERED, OrganStatus.UNAVAILABLE],
+		AVAILABLE: [OrganStatus.MATCHING, OrganStatus.UNAVAILABLE, OrganStatus.CANCELLED],
+		MATCHING: [OrganStatus.OFFERED, OrganStatus.AVAILABLE, OrganStatus.UNAVAILABLE],
+		OFFERED: [OrganStatus.ACCEPTED, OrganStatus.AVAILABLE, OrganStatus.EXPIRED, OrganStatus.CANCELLED],
+		ACCEPTED: [OrganStatus.RETRIEVAL_SCHEDULED, OrganStatus.CANCELLED],
+		RETRIEVAL_SCHEDULED: [OrganStatus.RETRIEVAL_IN_PROGRESS, OrganStatus.CANCELLED],
+		RETRIEVAL_IN_PROGRESS: [OrganStatus.RETRIEVED, OrganStatus.CANCELLED, OrganStatus.UNAVAILABLE],
+		RETRIEVED: [OrganStatus.PRESERVING, OrganStatus.FINAL_ASSESSMENT],
+		PRESERVING: [OrganStatus.FINAL_ASSESSMENT, OrganStatus.UNAVAILABLE, OrganStatus.EXPIRED],
+		FINAL_ASSESSMENT: [OrganStatus.ALLOCATED, OrganStatus.UNAVAILABLE],
+		ALLOCATED: [OrganStatus.TRANSPLANTED],
+		TRANSPLANTED: [OrganStatus.COMPLETED],
+		COMPLETED: [], UNAVAILABLE: [OrganStatus.CANCELLED], EXPIRED: [], DISCARDED: [], CANCELLED: [],
+	};
+	const statuses = Object.values(OrganStatus);
+	assert.equal(Object.keys(graph).length, statuses.length, "graph must include each enum status");
+	for (const from of statuses) for (const to of statuses) {
+		assert.equal(isOrganTransitionAllowed(from, to), graph[from].includes(to), `${from} -> ${to}`);
+	}
 });
 
 test("preservation clock calculates operational severity from configured thresholds", () => {

@@ -29,10 +29,27 @@ type Notification = {
     offerStatus?: string | null;
     unitsAvailable?: number | null;
     unitsReserved?: number | null;
+    decision?: string | null;
   } | null;
 };
 
 const PAGE_SIZE = 10;
+type NotificationPhase = "underway" | "completed" | "expired" | "failed";
+const notificationPhaseStyle: Record<NotificationPhase, { backgroundColor: string; boxShadow: string }> = {
+  underway: { backgroundColor: "#d99b16", boxShadow: "0 0 0 4px #fff1c9" },
+  completed: { backgroundColor: "#13985e", boxShadow: "0 0 0 4px #def4e8" },
+  expired: { backgroundColor: "#899592", boxShadow: "0 0 0 4px #e9eeec" },
+  failed: { backgroundColor: "#d83232", boxShadow: "0 0 0 4px #fde7e5" },
+};
+
+function getNotificationPhase(item: Notification): NotificationPhase {
+  const signal = [item.eventType, item.title, item.message, item.payload?.toStatus, item.payload?.offerStatus, item.payload?.decision]
+    .filter(Boolean).join(" ").toUpperCase().replaceAll("_", " ");
+  if (/\b(EXPIRED|EXPIRATION)\b/.test(signal)) return "expired";
+  if (/\b(COMPLETED|COMPLETE|FULFILLED|TRANSPLANTED)\b/.test(signal)) return "completed";
+  if (/\b(REJECTED|DECLINED|FAILED|FAILURE|CANCELLED|CANCELED|WITHDRAWN|DENIED|NOT APPROVED)\b/.test(signal)) return "failed";
+  return "underway";
+}
 
 export default function NotificationsInbox() {
   const [items, setItems] = useState<Notification[]>([]);
@@ -94,9 +111,10 @@ export default function NotificationsInbox() {
         ) : (
           <>
             <div className="notification-rows">
-              {items.map((item) => (
-                <article className={`notification-row ${item.status === "UNREAD" ? "unread" : ""} ${item.eventType?.startsWith("EMERGENCY") || item.title.toUpperCase().includes("EMERGENCY") ? "emergency" : ""}`} key={item.id}>
-                  <span className="notification-bullet" />
+              {items.map((item) => {
+                const phase = getNotificationPhase(item);
+                return <article className={`notification-row status-${phase} ${item.status === "UNREAD" ? "unread" : ""} ${item.eventType?.startsWith("EMERGENCY") || item.title.toUpperCase().includes("EMERGENCY") ? "emergency" : ""}`} key={item.id}>
+                  <span className="notification-bullet" style={notificationPhaseStyle[phase]} role="img" aria-label={`Process ${phase}`} title={`Process ${phase}`} />
                   <div className="notification-content">
                     <div className="notification-title">
                       <strong>{item.title}</strong>
@@ -139,8 +157,8 @@ export default function NotificationsInbox() {
                       </a>
                     )}
                   </div>
-                </article>
-              ))}
+                </article>;
+              })}
             </div>
             {(page > 1 || hasMore) && (
               <nav className="notification-pagination" aria-label="Notifications pages">

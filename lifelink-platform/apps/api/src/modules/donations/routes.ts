@@ -18,6 +18,32 @@ const facilitiesQuery = z.object({ latitude: z.coerce.number().min(-90).max(90).
 const donorRoles = ["USER", "ADMINISTRATOR"] as const;
 const reviewRoles = ["BLOOD_BANK_USER", "HOSPITAL_USER", "ADMINISTRATOR"] as const;
 
+/** Records exactly one screened whole-blood unit when an institution completes a donation. */
+export async function recordCompletedDonationInventory(tx: Pick<Prisma.TransactionClient, "bloodInventory" | "donationInventory">, input: {
+  donationId: string;
+  institutionId: string;
+  verifiedBloodGroup: (typeof BLOOD_GROUPS)[number];
+  expiryDate: Date;
+}) {
+  const inventory = await tx.bloodInventory.create({ data: {
+    institutionId: input.institutionId,
+    bloodGroup: input.verifiedBloodGroup as never,
+    component: BloodComponent.WHOLE_BLOOD,
+    unitsAvailable: 1,
+    status: BloodInventoryStatus.AVAILABLE,
+    expiryDate: input.expiryDate,
+  } });
+  await tx.donationInventory.create({ data: {
+    donationId: input.donationId,
+    bloodInventoryId: inventory.id,
+    bloodGroup: input.verifiedBloodGroup as never,
+    quantity: 1,
+    expiryDate: input.expiryDate,
+    status: BloodInventoryStatus.AVAILABLE,
+  } });
+  return inventory;
+}
+
 export function registerDonationRoutes(router = Router()) {
   router.use(authenticateRequest());
   router.get("/facilities", authorizeAction(...donorRoles), asyncRoute(async (req, res) => {
@@ -118,8 +144,7 @@ export function registerDonationRoutes(router = Router()) {
       if (transition.count !== 1) throw new ApiError(409, "INVALID_DONATION_TRANSITION", "This donation was already updated. Refresh the queue and try again.");
       let inventoryRecord: { id: string } | undefined;
       if (parsed.data.status === "COMPLETED") {
-        inventoryRecord = await tx.bloodInventory.create({ data: { institutionId: donation.providerInstitutionId!, bloodGroup: parsed.data.verifiedBloodGroup!, component: BloodComponent.WHOLE_BLOOD, unitsAvailable: 1, status: BloodInventoryStatus.AVAILABLE, expiryDate: parsed.data.expiryDate } });
-        await tx.donationInventory.create({ data: { donationId: donation.id, bloodInventoryId: inventoryRecord.id, bloodGroup: parsed.data.verifiedBloodGroup, quantity: 1, expiryDate: parsed.data.expiryDate, status: BloodInventoryStatus.AVAILABLE } });
+        inventoryRecord = await recordCompletedDonationInventory(tx, { donationId: donation.id, institutionId: donation.providerInstitutionId!, verifiedBloodGroup: parsed.data.verifiedBloodGroup!, expiryDate: parsed.data.expiryDate! });
       }
       const record = await tx.donation.findUniqueOrThrow({ where: { id: donation.id }, include: { donor: { select: { id: true, name: true, phone: true } }, providerInstitution: { select: { id: true, name: true, address: true, contactNumber: true } } } });
       const eventId = randomUUID();

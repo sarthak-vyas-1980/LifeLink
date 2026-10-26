@@ -13,17 +13,17 @@ const request = {
 
 test("request reads are limited to requester, recipient, linked institutions, or admin", () => {
   for (const userId of ["requester", "recipient"]) {
-    assert.equal(mayReadRequest(request, { userId, role: "DONOR_RECIPIENT" }), true);
+    assert.equal(mayReadRequest(request, { userId, role: "USER", principalType: "USER" }), true);
   }
-  assert.equal(mayReadRequest(request, { userId: "hospital-user", role: "HOSPITAL_USER", institutionId: "hospital-a" }), true);
-  assert.equal(mayReadRequest(request, { userId: "bank-user", role: "BLOOD_BANK_USER", institutionId: "bank-a" }), true);
-  assert.equal(mayReadRequest(request, { userId: "admin", role: "ADMINISTRATOR" }), true);
-  assert.equal(mayReadRequest(request, { userId: "outsider", role: "DONOR_RECIPIENT" }), false);
+  assert.equal(mayReadRequest(request, { role: "HOSPITAL_USER", principalType: "INSTITUTION", institutionId: "hospital-a", capabilities: { blood: true, organ: false } }), true);
+  assert.equal(mayReadRequest(request, { role: "BLOOD_BANK_USER", principalType: "INSTITUTION", institutionId: "bank-a", capabilities: { blood: true, organ: false } }), true);
+  assert.equal(mayReadRequest(request, { userId: "admin", role: "ADMINISTRATOR", principalType: "USER" }), true);
+  assert.equal(mayReadRequest(request, { userId: "outsider", role: "USER", principalType: "USER" }), false);
 });
 
 test("a provider cannot coordinate another institution's request", () => {
-  assert.throws(() => assertMayCoordinate(request, { userId: "provider", role: "BLOOD_BANK_USER", institutionId: "bank-a" }), { status: 404 });
-  assert.doesNotThrow(() => assertMayCoordinate(request, { userId: "hospital-user", role: "HOSPITAL_USER", institutionId: "hospital-a" }));
+  assert.throws(() => assertMayCoordinate(request, { role: "BLOOD_BANK_USER", principalType: "INSTITUTION", institutionId: "bank-a", capabilities: { blood: true, organ: false } }), { status: 404 });
+  assert.doesNotThrow(() => assertMayCoordinate(request, { role: "HOSPITAL_USER", principalType: "INSTITUTION", institutionId: "hospital-a", capabilities: { blood: true, organ: false } }));
 });
 
 test("duplicate workflow event delivery is idempotently suppressed", () => {
