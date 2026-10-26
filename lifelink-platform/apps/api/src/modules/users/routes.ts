@@ -62,7 +62,7 @@ async function getMyRequestAnalytics(request: Request, response: Response) {
   const to = new Date();
   const from = new Date(to.getTime() - Number.parseInt(range, 10) * 24 * 60 * 60 * 1000);
   const bloodStatuses = status === "OPEN"
-    ? [RequestStatus.CREATED, RequestStatus.UNDER_REVIEW, RequestStatus.SEARCHING_MATCHING, RequestStatus.INSTITUTIONS_NOTIFIED, RequestStatus.OFFERS_RECEIVED, RequestStatus.OFFER_EVALUATION, RequestStatus.OFFER_ACCEPTED, RequestStatus.RESERVED, RequestStatus.IN_TRANSIT, RequestStatus.REOPENED]
+    ? [RequestStatus.CREATED, RequestStatus.UNDER_REVIEW, RequestStatus.SEARCHING_MATCHING, RequestStatus.INSTITUTIONS_NOTIFIED, RequestStatus.OFFERS_RECEIVED, RequestStatus.OFFER_EVALUATION, RequestStatus.OFFER_ACCEPTED, RequestStatus.RESERVED, RequestStatus.REOPENED]
     : status === "COMPLETED" ? [RequestStatus.FULFILLED]
       : status === "CLOSED" ? [RequestStatus.CANCELLED, RequestStatus.REJECTED, RequestStatus.EXPIRED] : undefined;
   const donorStatuses = status === "OPEN" ? [OrganDonorStatus.REGISTERED, OrganDonorStatus.ACTIVE]
@@ -98,7 +98,7 @@ async function getMyRequestAnalytics(request: Request, response: Response) {
     bucket[`${kind}Total`] += 1;
     if (fulfilled) bucket[`${kind}Fulfilled`] += 1;
   };
-  bloodRequests.forEach(({ requestDate, status: requestStatus }) => addCount(requestDate, "blood", requestStatus === RequestStatus.FULFILLED));
+  bloodRequests.forEach(({ requestDate }) => addCount(requestDate, "blood", false));
   donors.forEach(({ createdAt, status: donorStatus }) => addCount(createdAt, "organ", donorStatus === OrganDonorStatus.FULFILLED));
   recipients.forEach(({ createdAt, status: recipientStatus }) => addCount(createdAt, "organ", recipientStatus === OrganRecipientStatus.CLOSED));
   const rate = (fulfilled: number, total: number) => total ? Math.round(fulfilled * 100 / total) : null;

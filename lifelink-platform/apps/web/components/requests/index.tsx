@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { BLOOD_COMPONENTS, BLOOD_GROUPS } from "@lifelink/shared";
 import { ApiFailure, requestApi, submitWorkflowAction } from "../../lib/api-client";
 import { getCurrentSession } from "../../lib/auth";
@@ -22,7 +22,7 @@ type BloodRequest = {
 	contactNumber?: string;
 };
 type Candidate = { matchId?: string; institutionId: string; institutionName: string; unitsAvailable: number; distanceKm?: number; expiryDate: string | null; score: number; guaranteedFulfilment?: false };
-type Offer = { matchId: string; status: string; providerInstitutionId: string | null; providerName: string; compatibilityScore: number | null; matchedAt: string; unitsAvailable: number; expiryDate: string | null; reservationExpiresAt: string | null; dispatchedAt: string | null; receivedAt: string | null };
+type Offer = { matchId: string; status: string; providerInstitutionId: string | null; providerName: string; compatibilityScore: number | null; matchedAt: string; unitsAvailable: number; expiryDate: string | null; reservationExpiresAt: string | null };
 
 const pretty = (value: string) => value.replaceAll("_", " ").toLowerCase().replace(/\b\w/g, (letter) => letter.toUpperCase());
 const statusLabel = (value: string) => value === "UNDER_REVIEW" ? "Ready for Matching" : pretty(value);
@@ -82,9 +82,39 @@ export function RequestForm({ onCreated }: { onCreated: (request: BloodRequest, 
 }
 
 export function RequestStateTimeline({ status }: { status: string }) {
-	const steps = ["CREATED", "UNDER_REVIEW", "SEARCHING_MATCHING", "INSTITUTIONS_NOTIFIED", "OFFERS_RECEIVED", "OFFER_EVALUATION", "OFFER_ACCEPTED", "RESERVED", "IN_TRANSIT", "FULFILLED"];
-	const index = steps.indexOf(status);
-	return <div className="timeline"><div className="timeline-track">{steps.map((step, stepIndex) => <div key={step} className={`timeline-step ${index >= 0 && stepIndex <= index ? "done" : ""} ${step === status ? "current" : ""}`}><i /><span>{statusLabel(step)}</span></div>)}</div>{status === "REOPENED" && <p className="status-note">Request reopened for another matching attempt.</p>}{finalStatuses.includes(status) && <p className={`status-note ${status.toLowerCase()}`}>Request {pretty(status.toLowerCase())}</p>}</div>;
+	const stepRows = [
+		["CREATED", "UNDER_REVIEW", "SEARCHING_MATCHING", "INSTITUTIONS_NOTIFIED", "OFFERS_RECEIVED"],
+		["OFFER_EVALUATION", "OFFER_ACCEPTED", "RESERVED", "FULFILLED"],
+	];
+	const allSteps = stepRows.flat();
+	const currentIndex = allSteps.indexOf(status);
+
+	return <div className="timeline">
+		{stepRows.map((row, rowIndex) => (
+			<div key={rowIndex} className="timeline-row">
+				{row.map((step, colIndex) => {
+					const globalIndex = allSteps.indexOf(step);
+					const isDone = currentIndex >= 0 && globalIndex <= currentIndex;
+					const isCurrent = step === status;
+					const isLastInRow = colIndex === row.length - 1;
+					const nextGlobalIndex = globalIndex + 1;
+					const isConnectorFilled = isDone && currentIndex >= nextGlobalIndex && !isLastInRow;
+
+					return (
+						<div key={step} className={`timeline-step ${isDone ? "done" : ""} ${isCurrent ? "current" : ""}`}>
+							<div className="timeline-node">
+								<i className="timeline-dot" />
+								{!isLastInRow && <div className={`timeline-connector ${isConnectorFilled ? "filled" : ""}`} />}
+							</div>
+							<span>{statusLabel(step)}</span>
+						</div>
+					);
+				})}
+			</div>
+		))}
+		{status === "REOPENED" && <p className="status-note">Request reopened for another matching attempt.</p>}
+		{finalStatuses.includes(status) && <p className={`status-note ${status.toLowerCase()}`}>Request {pretty(status.toLowerCase())}</p>}
+	</div>;
 }
 
 export function OfferReview({ offers, candidates, request, role, institutionId, canRequesterAct, onAction }: { offers: Offer[]; candidates: Candidate[]; request: BloodRequest; role: string; institutionId?: string | null; canRequesterAct: boolean; onAction: (path: string, body?: unknown) => Promise<void> }) {
@@ -92,9 +122,11 @@ export function OfferReview({ offers, candidates, request, role, institutionId, 
 	return <div className="offer-list">
 		{candidates.length > 0 && <section><h3>Matching candidates <span className="pill neutral">Not confirmed</span></h3><p className="muted">These providers matched the current criteria. Availability must be confirmed by the institution.</p>{candidates.map((candidate, index) => <article className="offer-card" key={candidate.matchId ?? candidate.institutionId + index}><div><strong>{candidate.institutionName}</strong><p>{candidate.distanceKm === undefined ? "Distance unavailable" : `${candidate.distanceKm.toFixed(1)} km away`} · {candidate.unitsAvailable} units shown</p></div><span className="score">{Math.round(candidate.score * 100)} match</span></article>)}</section>}
 		<section><h3>Provider offers <span className="pill neutral">{offers.length}</span></h3>{offers.length === 0 && candidates.length === 0 && <p className="empty">No offers yet. Run matching to search current institutional stock.</p>}{offers.map((offer) => {
-			const canRespond = offer.status === "PENDING" && (isAdmin || (["BLOOD_BANK_USER", "HOSPITAL_USER"].includes(role) && institutionId === offer.providerInstitutionId));
+			const isProvider = ["BLOOD_BANK_USER", "HOSPITAL_USER"].includes(role) && institutionId === offer.providerInstitutionId;
+			const canRespond = offer.status === "PENDING" && (isAdmin || isProvider);
 			const canEvaluate = canRequesterAct && offer.status === "ACCEPTED" && ["OFFERS_RECEIVED", "OFFER_EVALUATION"].includes(request.status);
-			return <article className="offer-card" key={offer.matchId}><div><strong>{offer.providerName}</strong><p>{offer.unitsAvailable} units · {offer.compatibilityScore === null ? "Compatibility not scored" : `${Math.round(offer.compatibilityScore * 100)}% compatibility`}</p>{offer.reservationExpiresAt && <small>Reservation ends {new Date(offer.reservationExpiresAt).toLocaleString()}</small>}</div><div className="offer-actions"><span className={`pill ${offer.status.toLowerCase()}`}>{pretty(offer.status)}</span>{canRespond && <><button className="button small primary" onClick={() => void onAction(`/api/requests/blood/${request.id}/offers/${offer.matchId}/respond`, { action: "ACCEPT" })}>Confirm availability</button><button className="button small quiet" onClick={() => void onAction(`/api/requests/blood/${request.id}/offers/${offer.matchId}/respond`, { action: "REJECT" })}>Decline</button></>}{canEvaluate && <><button className="button small primary" onClick={() => void onAction(`/api/requests/blood/${request.id}/offers/${offer.matchId}/evaluate`, { action: "ACCEPT" })}>Select offer</button><button className="button small quiet" onClick={() => void onAction(`/api/requests/blood/${request.id}/offers/${offer.matchId}/evaluate`, { action: "REJECT" })}>Decline offer</button></>}</div></article>;
+			const canFulfill = request.status === "RESERVED" && offer.status === "ACCEPTED" && (isAdmin || isProvider);
+			return <article className="offer-card" key={offer.matchId}><div><strong>{offer.providerName}</strong><p>{offer.unitsAvailable} units · {offer.compatibilityScore === null ? "Compatibility not scored" : `${Math.round(offer.compatibilityScore * 100)}% compatibility`}</p>{offer.reservationExpiresAt && <small>Reservation ends {new Date(offer.reservationExpiresAt).toLocaleString()}</small>}</div><div className="offer-actions"><span className={`pill ${offer.status.toLowerCase()}`}>{pretty(offer.status)}</span>{canRespond && <><button className="button small primary" onClick={() => void onAction(`/api/requests/blood/${request.id}/offers/${offer.matchId}/respond`, { action: "ACCEPT" })}>Confirm availability</button><button className="button small quiet" onClick={() => void onAction(`/api/requests/blood/${request.id}/offers/${offer.matchId}/respond`, { action: "REJECT" })}>Decline</button></>}{canEvaluate && <><button className="button small primary" onClick={() => void onAction(`/api/requests/blood/${request.id}/offers/${offer.matchId}/evaluate`, { action: "ACCEPT" })}>Select offer</button><button className="button small quiet" onClick={() => void onAction(`/api/requests/blood/${request.id}/offers/${offer.matchId}/evaluate`, { action: "REJECT" })}>Decline offer</button></>}{canFulfill && <button className="button small primary" onClick={() => void onAction(`/api/requests/blood/${request.id}/fulfill`)}>Mark fulfilled & handed over</button>}</div></article>;
 		})}</section>
 	</div>;
 }
@@ -109,39 +141,58 @@ export default function RequestsWorkspace() {
 	const [error, setError] = useState("");
 	const initialRefreshStarted = useRef(false);
 	const session = getCurrentSession();
-	const selected = useMemo(() => requests.find((item) => item.id === selectedId), [requests, selectedId]);
 	const isAdmin = session?.user.role === "ADMINISTRATOR";
+	const selected = useMemo(() => requests.find((item) => item.id === selectedId), [requests, selectedId]);
 	const canCreateRequest = isAdmin || ["USER", "HOSPITAL_USER"].includes(session?.user.role ?? "");
 	const canRequesterAct = Boolean(isAdmin || selected?.contactNumber);
 
-	const refresh = useCallback(async (requestedId = selectedId) => {
+	const searchParams = useSearchParams();
+	const queryRequestId = searchParams?.get("requestId") ?? "";
+
+	const loadOffers = useCallback(async (id: string) => {
+		try {
+			const offerData = await requestApi<{ offers: Offer[] }>(`/api/requests/blood/${id}/offers`);
+			setOffers(offerData.offers);
+		} catch {
+			setOffers([]);
+		}
+	}, []);
+
+	const refresh = useCallback(async (preferredId?: string) => {
 		setError("");
 		try {
 			const data = await requestApi<{ requests: BloodRequest[] }>("/api/requests/blood");
 			setRequests(data.requests);
-			const active = data.requests.find((item) => item.id === requestedId) ?? data.requests[0];
-			if (!active) { setSelectedId(""); setOffers([]); return; }
+			const targetId = preferredId || selectedId || queryRequestId;
+			const active = (targetId ? data.requests.find((item) => item.id === targetId) : undefined) ?? data.requests[0];
+			if (!active) {
+				setSelectedId("");
+				setOffers([]);
+				return;
+			}
 			setSelectedId(active.id);
-			const [detail, offerData] = await Promise.all([
-				requestApi<BloodRequest>(`/api/requests/blood/${active.id}`),
-				requestApi<{ offers: Offer[] }>(`/api/requests/blood/${active.id}/offers`),
-			]);
-			setRequests((current) => current.map((item) => item.id === detail.id ? detail : item));
-			setOffers(offerData.offers);
+			await loadOffers(active.id);
 		} catch (reason) {
 			setError(reason instanceof ApiFailure ? reason.message : "Could not load blood requests.");
 		}
-	}, [selectedId]);
+	}, [selectedId, queryRequestId, loadOffers]);
+
+	const selectRequest = (id: string) => {
+		setSelectedId(id);
+		setOffers([]);
+		setCandidates([]);
+		void loadOffers(id);
+	};
 
 	useEffect(() => {
 		if (initialRefreshStarted.current) return;
 		initialRefreshStarted.current = true;
-		void refresh("");
-	}, [refresh]);
+		void refresh(queryRequestId);
+	}, [refresh, queryRequestId]);
 	useEffect(() => subscribeToWorkflowEvents((event) => { if (!event.requestId || event.requestId === selectedId) void refresh(selectedId); }), [refresh, selectedId]);
 
 	const act = async (path: string, body?: unknown) => {
-		if (["/dispatch", "/receipt", "/cancel", "/reopen"].some((part) => path.endsWith(part)) && !window.confirm("Confirm this request status update?")) return;
+		if (["/cancel", "/reopen"].some((part) => path.endsWith(part)) && !window.confirm("Confirm this request status update?")) return;
 		setBusy(true);
 		setError("");
 		try {
@@ -176,21 +227,20 @@ export default function RequestsWorkspace() {
 		} finally { setBusy(false); }
 	};
 
-	const acceptedOffer = offers.find((offer) => offer.status === "ACCEPTED" && offer.reservationExpiresAt);
-	const canDispatch = selected?.status === "RESERVED" && Boolean(acceptedOffer) && (isAdmin || (session?.user.institutionId && acceptedOffer?.providerInstitutionId === session.user.institutionId));
-	const canReceive = selected?.status === "IN_TRANSIT" && canRequesterAct;
+	const acceptedOffer = offers.find((item) => item.status === "ACCEPTED");
+	const isProviderInstitution = Boolean(session?.user.institutionId && acceptedOffer?.providerInstitutionId === session.user.institutionId);
+	const canFulfill = Boolean(selected && selected.status === "RESERVED" && (isAdmin || isProviderInstitution));
 	const canCancel = Boolean(selected && canRequesterAct && cancellableStatuses.includes(selected.status));
 	const canReopen = Boolean(selected && canRequesterAct && reopenableStatuses.includes(selected.status));
 	const canMatch = Boolean(selected && canRequesterAct && ["CREATED", "UNDER_REVIEW", "REOPENED"].includes(selected.status));
 
 	return <div className="page-stack"><header className="page-heading"><div><span className="eyebrow">BLOOD COORDINATION</span><h1>Requests & offers</h1><p>Submit a request, review provider responses, and follow each confirmed step.</p></div></header>
 		{canCreateRequest ? <RequestForm onCreated={created} /> : <section className="panel"><div className="panel-heading"><div><span className="eyebrow">PROVIDER WORKSPACE</span><h2>Respond to matched blood requests</h2><p>New blood requests are created by users and hospitals. Your institution will see requests when matching identifies your inventory.</p></div></div></section>}
-		<div className="workflow-grid"><section className="panel request-list"><div className="panel-heading"><div><span className="eyebrow">WORKFLOW</span><h2>Requests you can access</h2></div><button className="button quiet" onClick={() => void refresh()} disabled={busy}>Refresh</button></div>{requests.length === 0 ? <p className="empty">Requests you are permitted to coordinate will appear here.</p> : requests.map((item) => <button key={item.id} className={`request-row ${selectedId === item.id ? "active" : ""}`} onClick={() => { setCandidates([]); void refresh(item.id); }}><span><strong>{pretty(item.bloodGroup)} · {pretty(item.component)}</strong><small>{item.quantity} units · {item.location}</small></span><span className={`pill ${item.status.toLowerCase()}`}>{statusLabel(item.status)}</span></button>)}</section>
+		<div className="workflow-grid"><section className="panel request-list"><div className="panel-heading"><div><span className="eyebrow">WORKFLOW</span><h2>Requests you can access</h2></div><button className="button quiet" onClick={() => void refresh()} disabled={busy}>Refresh</button></div>{requests.length === 0 ? <p className="empty">Requests you are permitted to coordinate will appear here.</p> : requests.map((item) => <button key={item.id} className={`request-row ${selectedId === item.id ? "active" : ""}`} onClick={() => selectRequest(item.id)}><span><strong>{pretty(item.bloodGroup)} · {pretty(item.component)}</strong><small>{item.quantity} units · {item.location}</small></span><span className={`pill ${item.status.toLowerCase()}`}>{statusLabel(item.status)}</span></button>)}</section>
 			<section className="panel workflow-detail">{selected ? <><div className="panel-heading"><div><span className="eyebrow">REQUEST DETAIL</span><h2>{pretty(selected.bloodGroup)} {pretty(selected.component)}</h2><p>{selected.quantity} units · {selected.priority} · {selected.location}</p></div><span className={`pill ${selected.status.toLowerCase()}`}>{statusLabel(selected.status)}</span></div><RequestStateTimeline status={selected.status} /><div className="action-bar">
 				{canMatch && <><button className="button primary" disabled={busy} onClick={() => void match()}>Find matching inventory</button>{selected.status === "REOPENED" && retryRadius && <button className="button quiet" disabled={busy} onClick={() => void match(retryRadius)}>Widen search to {retryRadius} km</button>}</>}
+				{canFulfill && <button className="button primary" disabled={busy} onClick={() => void act(`/api/requests/blood/${selected.id}/fulfill`)}>Mark request fulfilled</button>}
 				{canReopen && <button className="button quiet" disabled={busy} onClick={() => void act(`/api/requests/blood/${selected.id}/reopen`)}>Reopen request</button>}
-				{canDispatch && <button className="button primary" disabled={busy} onClick={() => void act(`/api/requests/blood/${selected.id}/dispatch`)}>Mark dispatched</button>}
-				{canReceive && <button className="button primary" disabled={busy} onClick={() => void act(`/api/requests/blood/${selected.id}/receipt`)}>Confirm receipt</button>}
 				{canCancel && <button className="button danger" disabled={busy} onClick={() => void act(`/api/requests/blood/${selected.id}/cancel`)}>Cancel request</button>}
 			</div><OfferReview offers={offers} candidates={candidates} request={selected} role={session?.user.role ?? ""} institutionId={session?.user.institutionId} canRequesterAct={canRequesterAct} onAction={act} /></> : <div className="empty-state"><span className="empty-icon">↗</span><h2>Select a request</h2><p>Choose a request from the list to view its current workflow.</p></div>}</section></div>{error && <div className="toast-error" role="alert">{error}<button onClick={() => setError("")}>Dismiss</button></div>}</div>;
 }

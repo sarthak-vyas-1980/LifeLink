@@ -14,6 +14,7 @@ import {
   releaseReservedBloodUnits,
   recordWorkflowEvent,
   reserveBloodUnits,
+  runInTransaction,
 } from "@lifelink/database";
 import type { AuthContext } from "../../middleware/auth";
 import { ApiError } from "../../middleware/api-error";
@@ -197,7 +198,7 @@ export function reviewBloodRequest(requestId: string, actor: AuthContext) {
   if (actor.role !== "ADMINISTRATOR") {
     forbidden();
   }
-  return database.$transaction(async (transaction) => {
+  return runInTransaction(async (transaction) => {
     const request = await loadBloodRequest(transaction, requestId);
     if (request.status !== RequestStatus.CREATED) {
       conflict("Only a newly created request can be reviewed.");
@@ -220,7 +221,7 @@ export function respondToBloodOffer(
   action: "ACCEPT" | "REJECT",
   actor: AuthContext,
 ) {
-  return database.$transaction(async (transaction) => {
+  return runInTransaction(async (transaction) => {
     const request = await loadBloodRequest(transaction, requestId);
     const match = getMatch(request, matchId);
     assertProvider(match, actor);
@@ -288,7 +289,7 @@ export function evaluateBloodOffer(
   action: "ACCEPT" | "REJECT",
   actor: AuthContext,
 ) {
-  return database.$transaction(async (transaction) => {
+  return runInTransaction(async (transaction) => {
     const request = await loadBloodRequest(transaction, requestId);
     assertRequester(request, actor);
     const match = getMatch(request, matchId);
@@ -414,7 +415,7 @@ export function evaluateBloodOffer(
 
 // Reopen a request and release any selected offer reservation atomically.
 export function reopenBloodRequest(requestId: string, actor: AuthContext) {
-  return database.$transaction(async (transaction) => {
+  return runInTransaction(async (transaction) => {
     const request = await loadBloodRequest(transaction, requestId);
     assertRequester(request, actor);
     const reopenableStatuses: RequestStatus[] = [
@@ -472,7 +473,7 @@ export function reopenBloodRequest(requestId: string, actor: AuthContext) {
 
 // Cancel an active request, releasing reserved units when necessary.
 export function cancelBloodRequest(requestId: string, actor: AuthContext) {
-  return database.$transaction(async (transaction) => {
+  return runInTransaction(async (transaction) => {
     const request = await loadBloodRequest(transaction, requestId);
     assertRequester(request, actor);
     const cancellableStatuses: RequestStatus[] = [
@@ -531,75 +532,72 @@ export function cancelBloodRequest(requestId: string, actor: AuthContext) {
   });
 }
 
-// The selected provider dispatches units while the reservation is still valid.
-export function dispatchBloodRequest(requestId: string, actor: AuthContext) {
-  return database.$transaction(async (transaction) => {
+// Fulfill a reserved blood request when the recipient collects the blood from the institution.
+export function fulfillBloodRequest(requestId: string, actor: AuthContext) {
+  return runInTransaction(async (transaction) => {
     const request = await loadBloodRequest(transaction, requestId);
     if (request.status !== RequestStatus.RESERVED) {
-      conflict("Only reserved blood requests can be dispatched.");
+      conflict("Only reserved requests can be marked as fulfilled.");
     }
-    const selectedMatch = request.matches.find(
-      (candidate) =>
-        candidate.status === MatchStatus.ACCEPTED &&
-        candidate.reservationExpiresAt !== null,
-    );
-    if (!selectedMatch) {
-      conflict("The selected offer has no active reservation.");
-    }
-    assertProvider(selectedMatch, actor);
-    if (selectedMatch.reservationExpiresAt! <= new Date()) {
-      conflict("The reservation has expired and cannot be dispatched.");
-    }
-    await transaction.match.update({
-      where: { id: selectedMatch.id },
-      data: { dispatchedAt: new Date() },
-    });
-    await transitionRequest(
-      transaction,
-      requestId,
-      RequestStatus.RESERVED,
-      RequestStatus.IN_TRANSIT,
-      actor.userId,
-    );
-    return transaction.request.findUniqueOrThrow({ where: { id: requestId } });
-  });
-}
 
-// Confirm receipt, consume the reserved inventory and fulfil the request.
-export function receiveBloodRequest(requestId: string, actor: AuthContext) {
-  return database.$transaction(async (transaction) => {
-    const request = await loadBloodRequest(transaction, requestId);
-    assertRequester(request, actor);
-    if (request.status !== RequestStatus.IN_TRANSIT) {
-      conflict("Only in-transit blood requests can be marked received.");
-    }
-    const selectedMatch = request.matches.find(
+    const reservedMatch = request.matches.find(
       (candidate) =>
         candidate.status === MatchStatus.ACCEPTED &&
         candidate.bloodInventoryId !== null,
     );
-    if (!selectedMatch?.bloodInventoryId) {
-      conflict("The in-transit request has no selected inventory record.");
+    if (!reservedMatch?.bloodInventoryId) {
+      conflict("The reservation has no selected inventory record.");
     }
 
-    await consumeReservedBloodUnits(
-      transaction,
-      selectedMatch.bloodInventoryId,
-      request.quantity,
-      actor.userId,
-    );
-    await transaction.match.update({
-      where: { id: selectedMatch.id },
-      data: { receivedAt: new Date(), reservationExpiresAt: null },
-    });
+    const isAuthorized =
+      actor.role === "ADMINISTRATOR" ||
+      (Boolean(actor.institutionId) &&
+        actor.institutionId === reservedMatch.providerInstitutionId);
+
+    if (!isAuthorized) {
+      forbidden();
+    }
+
     await transitionRequest(
       transaction,
       requestId,
-      RequestStatus.IN_TRANSIT,
+      RequestStatus.RESERVED,
       RequestStatus.FULFILLED,
       actor.userId,
     );
-    return transaction.request.findUniqueOrThrow({ where: { id: requestId } });
+
+    await consumeReservedBloodUnits(
+      transaction,
+      reservedMatch.bloodInventoryId,
+      request.quantity,
+      actor.userId,
+    );
+
+    await transaction.match.update({
+      where: { id: reservedMatch.id },
+      data: { receivedAt: new Date() },
+    });
+
+    await transaction.auditLog.create({
+      data: {
+        actorId: actor.userId,
+        actorInstitutionId: actor.institutionId,
+        action: "BLOOD_REQUEST_FULFILLED",
+        entityType: "Request",
+        entityId: requestId,
+        metadata: { matchId: reservedMatch.id, quantity: request.quantity },
+      },
+    });
+
+    return transaction.request.findUniqueOrThrow({
+      where: { id: requestId },
+      include: {
+        createdBy: true,
+        matches: {
+          include: { bloodInventory: true, providerInstitution: true },
+        },
+      },
+    });
   });
 }
 
@@ -616,7 +614,7 @@ export async function expireBloodReservations(now = new Date()) {
   let expiredCount = 0;
 
   for (const reservation of dueReservations) {
-    const expired = await database.$transaction(async (transaction) => {
+    const expired = await runInTransaction(async (transaction) => {
       const request = await loadBloodRequest(transaction, reservation.requestId);
       const match = getMatch(request, reservation.id);
       if (

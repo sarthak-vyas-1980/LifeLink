@@ -336,7 +336,6 @@ async function findRequestStatus(query: string, actor: AuthContext): Promise<Liv
         recipients: { select: { userId: true } },
         matches: { select: {
           status: true, providerInstitutionId: true, reservationExpiresAt: true,
-          dispatchedAt: true, receivedAt: true,
           providerInstitution: { select: { name: true } },
         } },
       },

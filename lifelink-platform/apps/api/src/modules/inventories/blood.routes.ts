@@ -1,6 +1,7 @@
 import { Router, type Request, type RequestHandler, type Response } from "express";
 import {
   createBloodInventory as persistBloodInventory,
+  listBloodInventoryForInstitution,
   searchAvailableInventory,
   updateBloodInventoryForInstitution as persistBloodInventoryUpdate,
 } from "@lifelink/database";
@@ -46,8 +47,30 @@ export function registerBloodInventoryRoutes(router = Router()) {
     authorizeInstitutionScope((request) => request.body.institutionId),
     asyncRoute(updateBloodInventory),
   );
+  router.get(
+    "/",
+    authenticateRequest(),
+    authorizeAction(...institutionRoles),
+    authorizeInstitutionCapability("blood"),
+    authorizeInstitutionScope((request) => typeof request.query.institutionId === "string" ? request.query.institutionId : undefined),
+    asyncRoute(listBloodInventory),
+  );
   router.get("/search", authenticateRequest(), asyncRoute(searchBloodInventory));
   return router;
+}
+
+export async function listBloodInventory(request: Request, response: Response) {
+  const institutionId = typeof request.query.institutionId === "string" ? request.query.institutionId : "";
+  if (!/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(institutionId)) {
+    response.status(400).json({ code: "VALIDATION_FAILED", message: "A valid institution ID is required.", traceId: request.traceId });
+    return;
+  }
+  const records = await listBloodInventoryForInstitution(institutionId);
+  response.json({ records: records.map((record) => ({
+    ...serializeInventory(record),
+    inventoryId: record.id,
+    institution: record.institution,
+  })) });
 }
 
 // Add a blood inventory record within the actor's institution scope.

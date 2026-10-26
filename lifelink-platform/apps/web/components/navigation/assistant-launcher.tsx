@@ -49,7 +49,7 @@ export default function AssistantLauncher({ hidden = false }: { hidden?: boolean
 		</section>}
 		<button type="button" className={`assistant-launcher-button${open ? " is-open" : ""}`} aria-label={open ? "Close LifeLink Assistant" : "Open LifeLink Assistant"} aria-expanded={open} aria-controls="assistant-launcher-panel" onClick={() => setOpen((value) => !value)}>
 			{open ? <X size={22} aria-hidden="true" /> : <Bot size={23} aria-hidden="true" />}
-			<span>{open ? "Close" : "Ask LifeLink"}</span>
+			<span>{open ? "Close" : "Ask"}</span>
 		</button>
 	</div>;
 }

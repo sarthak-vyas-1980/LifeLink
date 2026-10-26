@@ -1,4 +1,4 @@
-import { InstitutionStatus, RequestStatus, RequestType } from "@prisma/client";
+import { InstitutionStatus, RequestType } from "@prisma/client";
 import { Router, type Request, type RequestHandler, type Response } from "express";
 import { database } from "@lifelink/database";
 import { ApiError } from "../../middleware/api-error";
@@ -53,7 +53,6 @@ export function registerAdminRoutes(router = Router()) {
       for (const id of associatedInstitutions) {
         const metric = bloodMetrics.get(id)!;
         metric.total += 1;
-        if (request.status === RequestStatus.FULFILLED) metric.fulfilled += 1;
       }
     }
     const counts = (rows: Array<{ institutionId?: string; offeringCentreId?: string; procurementCentreId?: string; status: string; _count: { _all: number } }>, id: string, field: "institutionId" | "offeringCentreId" | "procurementCentreId") => rows.filter((row) => row[field] === id).reduce<Record<string, number>>((result, row) => { result[row.status] = row._count._all; return result; }, {});

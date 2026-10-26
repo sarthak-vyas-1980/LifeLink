@@ -34,7 +34,7 @@ export async function recordWorkflowEvent(
         location: true,
         createdById: true,
         createdByInstitutionId: true,
-        matches: { select: { providerInstitutionId: true } },
+        matches: { select: { providerInstitutionId: true, bloodInventory: { select: { institutionId: true } } } },
       },
     });
     if (request) {
@@ -52,6 +52,7 @@ export async function recordWorkflowEvent(
       const institutionIds = [
         request.createdByInstitutionId,
         ...request.matches.map((match) => match.providerInstitutionId),
+        ...request.matches.map((match) => match.bloodInventory?.institutionId),
       ].filter((id): id is string => Boolean(id));
       if (institutionIds.length > 0) {
         const participants = await transaction.institutionAccount.findMany({
@@ -145,11 +146,10 @@ async function describeWorkflowEvent(
       OFFER_EVALUATION: { title: "Provider offer selected for review", message: "The requester is evaluating the confirmed provider offers." },
       OFFER_ACCEPTED: { title: "Provider offer accepted", message: "The selected provider offer was accepted; stock reservation is in progress." },
       RESERVED: { title: "Blood units reserved", message: "The selected institution's units are reserved for this request." },
-      IN_TRANSIT: { title: "Blood dispatch confirmed", message: "The selected institution dispatched the reserved blood; it is now in transit." },
-      FULFILLED: { title: "Blood request fulfilled", message: "Receipt was confirmed and the request is complete." },
+      FULFILLED: { title: "Blood request fulfilled", message: "The user has collected the reserved blood units from the institution." },
       CANCELLED: { title: "Blood request cancelled", message: "The requester cancelled this request." },
       REOPENED: { title: "Blood request reopened", message: "The request returned to matching so another provider can be found." },
-      EXPIRED: { title: "Blood reservation expired", message: "The reservation expired before dispatch; the reserved units were released." },
+      EXPIRED: { title: "Blood reservation expired", message: "The reservation expired before the request was completed; the reserved units were released." },
       CREATED: { title: "Blood request created", message: "A new blood request was created." },
     };
     const transition = transitions[to] ?? { title: `Blood request ${humanize(to)}`, message: `Request status changed${from ? ` from ${humanize(from)} to ${humanize(to)}` : ` to ${humanize(to)}`}.` };

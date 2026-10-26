@@ -50,3 +50,5 @@ if (process.argv[1]?.replaceAll("\\", "/").endsWith("/src/server.ts")) {
     });
   }
 }
+
+// LifeLink API runtime: transaction timeout updated

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import { BLOOD_COMPONENTS, BLOOD_GROUPS } from "@lifelink/shared";
+import styles from "./inventory.module.css";
 import { ApiFailure, requestApi } from "../../../lib/api-client";
 import { getCurrentSession, type Session } from "../../../lib/auth";
 
@@ -15,6 +16,7 @@ type StockCandidate = {
 	bloodGroup: string;
 	component: string;
 	unitsAvailable: number;
+	status: string;
 	expiryDate: string | null;
 	lastUpdated: string;
 	distanceKm?: number;
@@ -25,10 +27,10 @@ type InventoryRecord = StockCandidate & { institutionId: string; id?: string };
 const label = (value: string) => value.replaceAll("_", " ").toLowerCase().replace(/\b\w/g, (letter) => letter.toUpperCase());
 const today = () => new Date().toISOString().slice(0, 10);
 
-async function fetchStockRows(institutionId: string, bloodGroup: string, component: string, quantity: number) {
-	const query = new URLSearchParams({ bloodGroup, component, quantity: String(quantity) });
-	const data = await requestApi<{ candidates: StockCandidate[] }>(`/api/inventory/blood/search?${query.toString()}`);
-	return data.candidates.filter((item) => item.institution.id === institutionId).map((item) => ({ ...item, institutionId: item.institution.id }));
+async function fetchStockRows(institutionId: string) {
+	const query = new URLSearchParams({ institutionId });
+	const data = await requestApi<{ records: StockCandidate[] }>(`/api/inventory/blood?${query.toString()}`);
+	return data.records.map((item) => ({ ...item, institutionId: item.institution.id }));
 }
 
 export default function InventoryPage() {
@@ -42,8 +44,6 @@ export default function InventoryPage() {
 	const [saving, setSaving] = useState(false);
 	const [records, setRecords] = useState<InventoryRecord[]>([]);
 	const [bloodGroup, setBloodGroup] = useState<string>(BLOOD_GROUPS[0]);
-	const [component, setComponent] = useState<string>(BLOOD_COMPONENTS[0]);
-	const [minimumUnits, setMinimumUnits] = useState("1");
 	const [editing, setEditing] = useState<InventoryRecord | null>(null);
 	const [showCreate, setShowCreate] = useState(false);
 	const [form, setForm] = useState<{ bloodGroup: string; component: string; unitsAvailable: string; expiryDate: string }>({ bloodGroup: BLOOD_GROUPS[0], component: BLOOD_COMPONENTS[0], unitsAvailable: "1", expiryDate: "" });
@@ -51,6 +51,20 @@ export default function InventoryPage() {
 	const [notice, setNotice] = useState("");
 	const isAdmin = session?.user.role === "ADMINISTRATOR";
 	const selectedInstitution = useMemo(() => institutions.find((item) => item.id === institutionId), [institutions, institutionId]);
+	const stockByGroup = useMemo(() => BLOOD_GROUPS.map((group) => {
+		const groupRecords = records.filter((record) => record.bloodGroup === group);
+		const available = groupRecords.filter((record) => record.status === "AVAILABLE" && (!record.expiryDate || new Date(record.expiryDate).getTime() > Date.now()));
+		return {
+			bloodGroup: group,
+			records: groupRecords,
+			units: available.reduce((total, record) => total + record.unitsAvailable, 0),
+			components: BLOOD_COMPONENTS.flatMap((item) => {
+				const units = available.filter((record) => record.component === item).reduce((total, record) => total + record.unitsAvailable, 0);
+				return units > 0 ? [{ component: item, units }] : [];
+			}),
+		};
+	}), [records]);
+	const selectedGroupRecords = useMemo(() => records.filter((record) => record.bloodGroup === bloodGroup), [records, bloodGroup]);
 
 	useEffect(() => {
 		const current = getCurrentSession();
@@ -82,27 +96,22 @@ export default function InventoryPage() {
 
 	const loadStock = useCallback(async () => {
 		if (!institutionId) return;
-		const quantity = Number(minimumUnits);
-		if (!Number.isInteger(quantity) || quantity < 1) {
-			setError("Minimum units must be a positive whole number.");
-			return;
-		}
 		setSearching(true);
 		setError("");
 		setNotice("");
 		try {
-			setRecords(await fetchStockRows(institutionId, bloodGroup, component, quantity));
+			setRecords(await fetchStockRows(institutionId));
 		} catch (reason) {
 			setError(reason instanceof Error ? reason.message : "Could not load blood stock.");
 		} finally {
 			setSearching(false);
 		}
-	}, [institutionId, bloodGroup, component, minimumUnits]);
+	}, [institutionId]);
 
 	useEffect(() => {
 		if (!institutionId) return;
 		let current = true;
-		void fetchStockRows(institutionId, BLOOD_GROUPS[0], BLOOD_COMPONENTS[0], 1)
+		void fetchStockRows(institutionId)
 			.then((rows) => { if (current) setRecords(rows); })
 			.catch((reason: Error) => { if (current) setError(reason.message); });
 		return () => { current = false; };
@@ -111,11 +120,11 @@ export default function InventoryPage() {
 	const resetForm = () => {
 		setEditing(null);
 		setShowCreate(false);
-		setForm({ bloodGroup, component, unitsAvailable: "1", expiryDate: "" });
+		setForm({ bloodGroup, component: form.component, unitsAvailable: "1", expiryDate: "" });
 	};
 	const startCreate = () => {
 		setEditing(null);
-		setForm({ bloodGroup, component, unitsAvailable: "1", expiryDate: "" });
+		setForm({ bloodGroup, component: form.component, unitsAvailable: "1", expiryDate: "" });
 		setShowCreate(true);
 	};
 	const startEdit = (record: InventoryRecord) => {
@@ -158,13 +167,11 @@ export default function InventoryPage() {
 				await requestApi("/api/inventory/blood", { method: "POST", body: JSON.stringify(body) });
 			}
 			setBloodGroup(form.bloodGroup);
-			setComponent(form.component);
-			setMinimumUnits("1");
 			setEditing(null);
 			setShowCreate(false);
 			setForm({ ...form, unitsAvailable: "1" });
 			setNotice(editing ? "Stock updated." : "Stock record added.");
-			setRecords(await fetchStockRows(institutionId, form.bloodGroup, form.component, 1));
+			setRecords(await fetchStockRows(institutionId));
 		} catch (reason) {
 			setError(reason instanceof Error ? reason.message : "Could not save blood stock.");
 		} finally {
@@ -176,14 +183,16 @@ export default function InventoryPage() {
 	if (!session || !authorized) return <main className="page-stack inventory-workspace"><header className="page-heading"><div><span className="eyebrow">BLOOD INVENTORY</span><h1>Stock management</h1><p>This workspace is available to administrators and institutions with blood service access.</p></div></header>{error && <p className="error" role="alert">{error}</p>}</main>;
 
 	return <main className="page-stack inventory-workspace">
-		<header className="page-heading"><div><span className="eyebrow">BLOOD INVENTORY</span><h1>Stock management</h1><p>{isAdmin ? "Search and maintain stock for an active blood bank." : `Manage available stock for ${institutionName}.`}</p></div><button className="button primary" disabled={!institutionId} onClick={startCreate}>Add stock</button></header>
-		{isAdmin && <section className="panel inventory-institution-panel"><label>Blood bank<select value={institutionId} onChange={(event) => { setInstitutionId(event.target.value); setRecords([]); setBloodGroup(BLOOD_GROUPS[0]); setComponent(BLOOD_COMPONENTS[0]); setMinimumUnits("1"); }} disabled={institutions.length === 0}>{institutions.length === 0 && <option value="">No active blood banks found</option>}{institutions.map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}</select></label>{selectedInstitution && <small className="muted">{selectedInstitution.address}</small>}</section>}
-		<section className="panel"><div className="panel-heading"><div><span className="eyebrow">SEARCH STOCK</span><h2>Filter by blood type</h2><p>Searches available stock for this institution by blood group, component, and minimum units.</p></div></div><form className="inventory-filter-form inventory-search-form" onSubmit={(event) => { event.preventDefault(); void loadStock(); }}>
-			<label>Blood group<select value={bloodGroup} onChange={(event) => setBloodGroup(event.target.value)}>{BLOOD_GROUPS.map((item) => <option key={item} value={item}>{label(item)}</option>)}</select></label>
-			<label>Component<select value={component} onChange={(event) => setComponent(event.target.value)}>{BLOOD_COMPONENTS.map((item) => <option key={item} value={item}>{label(item)}</option>)}</select></label>
-			<label>Minimum units<input type="number" min="1" step="1" inputMode="numeric" value={minimumUnits} onChange={(event) => setMinimumUnits(event.target.value)} /></label>
-			<button className="button" disabled={!institutionId || searching}>{searching ? "Searching…" : "Search stock"}</button>
-		</form><p className="inventory-search-note">Only available, unexpired records with at least the selected quantity appear in these results.</p></section>
+		<header className="page-heading"><div><span className="eyebrow">BLOOD INVENTORY</span><h1>Stock management</h1><p>{isAdmin ? "View and maintain blood stock by type for an active blood bank." : `View and manage available stock for ${institutionName}.`}</p></div><button className="button primary" disabled={!institutionId} onClick={startCreate}>Add stock</button></header>
+		{isAdmin && <section className="panel inventory-institution-panel"><label>Blood bank<select value={institutionId} onChange={(event) => { setInstitutionId(event.target.value); setRecords([]); setBloodGroup(BLOOD_GROUPS[0]); }} disabled={institutions.length === 0}>{institutions.length === 0 && <option value="">No active blood banks found</option>}{institutions.map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}</select></label>{selectedInstitution && <small className="muted">{selectedInstitution.address}</small>}</section>}
+		<section className={`panel blood-stock-summary ${styles.stockSummary}`}><div className="panel-heading"><div><span className="eyebrow">INSTITUTION BLOOD STOCK</span><h2>Available units by blood type</h2><p>Choose a blood type to review its component stock and expiry dates.</p></div><button className="button quiet" disabled={!institutionId || searching} onClick={() => void loadStock()}>{searching ? "Refreshing…" : "Refresh stock"}</button></div>
+			{loading || searching ? <p className="empty">Loading blood stock…</p> : <div className={styles.stockGrid}>{stockByGroup.map((item) => <button type="button" key={item.bloodGroup} className={`${styles.stockCard} ${bloodGroup === item.bloodGroup ? styles.selected : ""}`} onClick={() => setBloodGroup(item.bloodGroup)} aria-pressed={bloodGroup === item.bloodGroup}>
+				<span className={styles.cardHeading}><strong>{item.bloodGroup.replace("_POSITIVE", "+").replace("_NEGATIVE", "−")}</strong><span className={styles.unitCount}>{item.units} {item.units === 1 ? "unit" : "units"}</span></span>
+				{item.components.length ? <span className={styles.componentBreakdown}>{item.components.map(({ component: bloodComponent, units }) => <small key={bloodComponent}>{label(bloodComponent)} <b>{units}</b></small>)}</span> : <span className={styles.emptyStock}>No available stock</span>}
+			</button>)}</div>}
+			<p className="inventory-search-note">Available totals exclude expired records. Operational stock only; confirm suitability through authorized clinical staff.</p>
+		</section>
+
 		{(showCreate || editing) && <section className="panel inventory-entry-panel"><div className="panel-heading"><div><span className="eyebrow">{editing ? "UPDATE STOCK" : "NEW STOCK RECORD"}</span><h2>{editing ? "Update inventory record" : "Add inventory record"}</h2><p>Keep the available count and expiry date current so matching can use this stock.</p></div><button type="button" className="button quiet" onClick={resetForm}>Close</button></div><form className="inventory-filter-form inventory-entry-form" onSubmit={(event) => void saveStock(event)}>
 			<label>Blood group<select value={form.bloodGroup} onChange={(event) => setForm({ ...form, bloodGroup: event.target.value })}>{BLOOD_GROUPS.map((item) => <option key={item} value={item}>{label(item)}</option>)}</select></label>
 			<label>Component<select value={form.component} onChange={(event) => setForm({ ...form, component: event.target.value })}>{BLOOD_COMPONENTS.map((item) => <option key={item} value={item}>{label(item)}</option>)}</select></label>
@@ -192,8 +201,8 @@ export default function InventoryPage() {
 			<div className="inventory-entry-actions"><button className="button primary" disabled={saving}>{saving ? "Saving…" : editing ? "Save changes" : "Add stock"}</button><button type="button" className="button quiet" disabled={saving} onClick={resetForm}>Cancel</button></div>
 		</form></section>}
 		{error && <p className="error" role="alert">{error}</p>}{notice && <p className="inventory-notice" role="status">{notice}</p>}
-		<section className="panel"><div className="panel-heading"><div><span className="eyebrow">CURRENT RESULTS</span><h2>{institutionName || selectedInstitution?.name || "Blood bank stock"}</h2><p>{records.length} matching inventory record{records.length === 1 ? "" : "s"}</p></div><button className="button quiet" disabled={!institutionId || searching} onClick={() => void loadStock()}>Refresh</button></div>
-			{records.length === 0 ? <p className="empty">No available records matched these filters. Try a lower minimum quantity or add stock.</p> : <div className="organ-table-wrap"><table className="organ-table inventory-table"><thead><tr><th>Blood group</th><th>Component</th><th>Available</th><th>Expiry</th><th>Last updated</th><th>Action</th></tr></thead><tbody>{records.map((record) => <tr key={record.inventoryId}><td><strong>{label(record.bloodGroup)}</strong></td><td>{label(record.component)}</td><td>{record.unitsAvailable}</td><td>{record.expiryDate ? new Date(record.expiryDate).toLocaleDateString() : "Not set"}</td><td>{new Date(record.lastUpdated).toLocaleString()}</td><td><button className="button small" onClick={() => startEdit(record)}>Edit</button></td></tr>)}</tbody></table></div>}
+		<section className="panel"><div className="panel-heading"><div><span className="eyebrow">{bloodGroup.replace("_POSITIVE", "+").replace("_NEGATIVE", "−")} STOCK</span><h2>{institutionName || selectedInstitution?.name || "Blood bank stock"}</h2><p>{selectedGroupRecords.length} inventory record{selectedGroupRecords.length === 1 ? "" : "s"}</p></div></div>
+			{selectedGroupRecords.length === 0 ? <p className="empty">No inventory records for this blood type. Use Add stock to record availability.</p> : <div className="organ-table-wrap"><table className="organ-table inventory-table"><thead><tr><th>Component</th><th>Available</th><th>Status</th><th>Expiry</th><th>Last updated</th><th>Action</th></tr></thead><tbody>{selectedGroupRecords.map((record) => <tr key={record.inventoryId}><td><strong>{label(record.component)}</strong></td><td>{record.unitsAvailable}</td><td><span className={`pill ${record.status.toLowerCase()}`}>{label(record.status)}</span></td><td>{record.expiryDate ? new Date(record.expiryDate).toLocaleDateString() : "Not set"}</td><td>{new Date(record.lastUpdated).toLocaleString()}</td><td><button className="button small" onClick={() => startEdit(record)}>Edit</button></td></tr>)}</tbody></table></div>}
 		</section>
 	</main>;
 }

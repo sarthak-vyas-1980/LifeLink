@@ -133,6 +133,11 @@ export default function NotificationsInbox() {
                         Mark as read
                       </button>
                     )}
+                    {item.requestId && item.payload?.bloodGroup && (
+                      <a className="text-button" href={`/requests?requestId=${encodeURIComponent(item.requestId)}`}>
+                        View request
+                      </a>
+                    )}
                   </div>
                 </article>
               ))}

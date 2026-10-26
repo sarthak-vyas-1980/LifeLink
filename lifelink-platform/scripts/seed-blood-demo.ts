@@ -49,13 +49,24 @@ async function main() {
 
 		for (const item of stock) {
 			const existing = await database.bloodInventory.findFirst({ where: { institutionId: institution.id, bloodGroup: item.bloodGroup, component: item.component } });
-			if (existing) continue;
+			if (existing) {
+				await database.bloodInventory.update({
+					where: { id: existing.id },
+					data: {
+						unitsAvailable: item.units,
+						status: "AVAILABLE",
+						lastUpdated: new Date(),
+						expiryDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
+					}
+				});
+				continue;
+			}
 			await database.bloodInventory.create({ data: { institutionId: institution.id, bloodGroup: item.bloodGroup, component: item.component, unitsAvailable: item.units, status: "AVAILABLE", expiryDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) } });
 			createdStock += 1;
 		}
 	}
 
-	console.info(`Blood demo seed complete: ${providers.length} synthetic providers, ${createdStock} new inventory records; existing stock was left unchanged.`);
+	console.info(`Blood demo seed complete: ${providers.length} synthetic providers refreshed/seeded.`);
 	console.info(`Provider logins (all use ${demoPassword}): ${accounts.join(", ")}`);
 }
 

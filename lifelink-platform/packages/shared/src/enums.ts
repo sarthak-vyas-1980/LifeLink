@@ -93,7 +93,6 @@ export const WORKFLOW_EVENT_TYPES = [
   "OFFER_ACCEPTED",
   "OFFER_REJECTED",
   "RESERVATION_EXPIRED",
-  "REQUEST_FULFILLED",
 ] as const;
 
 export type WorkflowEventType = (typeof WORKFLOW_EVENT_TYPES)[number];

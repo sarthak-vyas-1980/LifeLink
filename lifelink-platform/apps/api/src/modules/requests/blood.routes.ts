@@ -7,6 +7,7 @@ import {
 } from "express";
 import {
   createRequest,
+  database,
   findRequestById,
   searchRequests,
 } from "@lifelink/database";
@@ -28,10 +29,9 @@ import { recordAuditEvent } from "../audit/service";
 import { startBloodMatchingWorkflow } from "./matching.service";
 import {
   cancelBloodRequest as cancelBloodRequestWorkflow,
-  dispatchBloodRequest as dispatchBloodRequestWorkflow,
   evaluateBloodOffer,
   expireBloodReservations,
-  receiveBloodRequest as receiveBloodRequestWorkflow,
+  fulfillBloodRequest as fulfillBloodRequestWorkflow,
   reopenBloodRequest as reopenBloodRequestWorkflow,
   respondToBloodOffer,
   reviewBloodRequest as reviewBloodRequestWorkflow,
@@ -107,18 +107,11 @@ export function registerBloodRequestRoutes(router = Router()) {
     asyncRoute(cancelBloodRequest),
   );
   router.post(
-    "/:requestId/dispatch",
+    "/:requestId/fulfill",
     authenticateRequest(),
     authorizeAction("BLOOD_BANK_USER", "HOSPITAL_USER", "ADMINISTRATOR"),
     validateUuidParams("requestId"),
-    asyncRoute(dispatchBloodRequest),
-  );
-  router.post(
-    "/:requestId/receipt",
-    authenticateRequest(),
-    authorizeAction("HOSPITAL_USER", "USER", "ADMINISTRATOR"),
-    validateUuidParams("requestId"),
-    asyncRoute(receiveBloodRequest),
+    asyncRoute(fulfillBloodRequest),
   );
   return router;
 }
@@ -187,7 +180,7 @@ export async function getBloodRequest(request: Request, response: Response) {
     return;
   }
 
-  if (!mayReadRequest(record, request.auth!)) {
+  if (!(await mayReadRequestOrNotification(record, request.auth!))) {
     throw new ApiError(404, "REQUEST_NOT_FOUND", "Request not found.");
   }
 
@@ -208,33 +201,92 @@ export async function reviewBloodRequest(
 
 export async function listBloodRequests(request: Request, response: Response) {
   const actor = request.auth!;
+  const requestedId = typeof request.query.requestId === "string" ? request.query.requestId : undefined;
+  if (requestedId) {
+    const record = await findRequestById(requestedId);
+    if (!record || record.requestType !== RequestType.BLOOD || !(await mayReadRequestOrNotification(record, actor))) {
+      throw new ApiError(404, "REQUEST_NOT_FOUND", "Request not found.");
+    }
+    response.json({ requests: [serializeRequestForActor(record, actor)], hasMore: false });
+    return;
+  }
   const takeRaw = request.query.limit;
   const take = typeof takeRaw === "string" && /^\d+$/.test(takeRaw) ? Number(takeRaw) : 50;
   if (take < 1 || take > 100) throw new ApiError(400, "INVALID_LIMIT", "Limit must be from 1 to 100.");
   const where: Record<string, unknown> = { requestType: RequestType.BLOOD };
+  let notifiedRequestIds: string[] = [];
   if (actor.role !== "ADMINISTRATOR") {
     const scopes: Record<string, unknown>[] = [];
     if (actor.userId) scopes.push({ createdById: actor.userId }, { recipients: { some: { userId: actor.userId } } });
+    const notificationRecipients = [
+      ...(actor.userId ? [{ userId: actor.userId }] : []),
+      ...(actor.institutionId ? [{ institutionId: actor.institutionId }] : []),
+    ];
+    if (notificationRecipients.length) {
+      const notifications = await database.notification.findMany({
+        where: { OR: notificationRecipients, requestId: { not: null } },
+        select: { requestId: true },
+        distinct: ["requestId"],
+      });
+      notifiedRequestIds = notifications.flatMap(({ requestId }) => requestId ? [requestId] : []);
+      if (notifiedRequestIds.length) scopes.push({ id: { in: notifiedRequestIds } });
+    }
     if (actor.institutionId) {
-      scopes.push({ createdByInstitutionId: actor.institutionId }, { matches: { some: { providerInstitutionId: actor.institutionId } } });
+      scopes.push(
+        { createdByInstitutionId: actor.institutionId },
+        { matches: { some: { OR: [
+          { providerInstitutionId: actor.institutionId },
+          { bloodInventory: { institutionId: actor.institutionId } },
+        ] } } },
+      );
     }
     where.OR = scopes.length ? scopes : [{ id: "" }];
   }
-  const rows = await searchRequests(where as never, take + 1);
+  const scopedRows = await searchRequests(where as never, take + 1);
+  const notifiedRows = notifiedRequestIds.length
+    ? await database.request.findMany({
+        where: { id: { in: notifiedRequestIds }, requestType: RequestType.BLOOD },
+        orderBy: [{ priority: "desc" }, { requestDate: "asc" }],
+        take,
+      })
+    : [];
+  const seenIds = new Set(scopedRows.map((row) => row.id));
+  const rows = [...scopedRows, ...notifiedRows.filter((row) => !seenIds.has(row.id))];
   response.json({ requests: rows.slice(0, take).map((row) => serializeRequestForActor(row, actor)), hasMore: rows.length > take });
 }
 
 export async function listBloodOffers(request: Request, response: Response) {
   const record = await findRequestById(String(request.params.requestId));
-  if (!record || record.requestType !== RequestType.BLOOD || !mayReadRequest(record, request.auth!)) {
+  if (!record || record.requestType !== RequestType.BLOOD || !(await mayReadRequestOrNotification(record, request.auth!))) {
     throw new ApiError(404, "REQUEST_NOT_FOUND", "Request not found.");
   }
-  response.json({ offers: record.matches.map((match) => ({
+  const actor = request.auth!;
+  const visibleMatches = actor.role === "ADMINISTRATOR" || actor.userId === record.createdById || record.createdByInstitutionId === actor.institutionId || !actor.institutionId
+    ? record.matches
+    : record.matches.filter((match) => match.providerInstitutionId === actor.institutionId || match.bloodInventory?.institutionId === actor.institutionId);
+  response.json({ offers: visibleMatches.map((match) => ({
     matchId: match.id, status: match.status, providerInstitutionId: match.providerInstitutionId,
     providerName: match.providerInstitution?.name ?? "Eligible institution", compatibilityScore: match.compatibilityScore,
     matchedAt: match.matchedDate, unitsAvailable: match.bloodInventory?.unitsAvailable ?? 0, expiryDate: match.bloodInventory?.expiryDate,
-    reservationExpiresAt: match.reservationExpiresAt, dispatchedAt: match.dispatchedAt, receivedAt: match.receivedAt,
+    reservationExpiresAt: match.reservationExpiresAt,
   })) });
+}
+
+async function mayReadRequestOrNotification(
+  record: NonNullable<Awaited<ReturnType<typeof findRequestById>>>,
+  actor: AuthContext,
+) {
+  if (mayReadRequest(record, actor)) return true;
+  const recipientScope = [
+    ...(actor.userId ? [{ userId: actor.userId }] : []),
+    ...(actor.institutionId ? [{ institutionId: actor.institutionId }] : []),
+  ];
+  if (!recipientScope.length) return false;
+  const notification = await database.notification.findFirst({
+    where: { OR: recipientScope, requestId: record.id },
+    select: { id: true },
+  });
+  return Boolean(notification);
 }
 
 export function assertMayCoordinate(
@@ -267,7 +319,9 @@ export function mayReadRequest(
       !!actor.institutionId &&
       (creatorInstitutionId === actor.institutionId ||
         record.matches.some(
-          (match) => match.providerInstitutionId === actor.institutionId,
+          (match) =>
+            match.providerInstitutionId === actor.institutionId ||
+            match.bloodInventory?.institutionId === actor.institutionId,
         )))
   );
 }
@@ -320,22 +374,11 @@ export async function cancelBloodRequest(
   response.json(serializeRequestForActor(updated, request.auth));
 }
 
-export async function dispatchBloodRequest(
+export async function fulfillBloodRequest(
   request: Request,
   response: Response,
 ) {
-  const updated = await dispatchBloodRequestWorkflow(
-    String(request.params.requestId),
-    request.auth!,
-  );
-  response.json(serializeRequestForActor(updated, request.auth));
-}
-
-export async function receiveBloodRequest(
-  request: Request,
-  response: Response,
-) {
-  const updated = await receiveBloodRequestWorkflow(
+  const updated = await fulfillBloodRequestWorkflow(
     String(request.params.requestId),
     request.auth!,
   );

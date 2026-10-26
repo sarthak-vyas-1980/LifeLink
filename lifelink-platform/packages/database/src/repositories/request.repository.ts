@@ -1,7 +1,6 @@
 import { Prisma, RequestStatus as PrismaRequestStatus } from "@prisma/client";
 import { isAllowedTransition, RequestStatus } from "@lifelink/shared";
 import { database, runInTransaction } from "../client";
-import { consumeReservedBloodUnits } from "./inventory.repository";
 import { recordWorkflowEvent } from "./workflow-event.repository";
 
 export function findRequestById(id: string) {
@@ -79,49 +78,5 @@ export async function saveRequestTransition(
     });
 
     return transaction.request.findUniqueOrThrow({ where: { id } });
-  });
-}
-
-// Consume the reserved units and close an in-transit blood request atomically.
-export function fulfillBloodRequest(
-  requestId: string,
-  inventoryId: string,
-  quantity: number,
-  actorId?: string,
-) {
-  return runInTransaction(async (transaction) => {
-    await consumeReservedBloodUnits(
-      transaction,
-      inventoryId,
-      quantity,
-      actorId,
-    );
-
-    const result = await transaction.request.updateMany({
-      where: { id: requestId, status: PrismaRequestStatus.IN_TRANSIT },
-      data: { status: PrismaRequestStatus.FULFILLED },
-    });
-
-    if (result.count !== 1) {
-      throw new Error("Only an in-transit request can be fulfilled.");
-    }
-
-    await transaction.auditLog.create({
-      data: {
-        actorId,
-        action: "REQUEST_FULFILLED",
-        entityType: "Request",
-        entityId: requestId,
-        metadata: { inventoryId, quantity },
-      },
-    });
-    await recordWorkflowEvent(transaction, {
-      eventType: "REQUEST_STATUS_CHANGED",
-      requestId,
-      actorId,
-      payload: { from: PrismaRequestStatus.IN_TRANSIT, to: PrismaRequestStatus.FULFILLED },
-    });
-
-    return transaction.request.findUniqueOrThrow({ where: { id: requestId } });
   });
 }

@@ -20,6 +20,21 @@ export function createBloodInventory(data: Prisma.BloodInventoryCreateInput) {
   return database.bloodInventory.create({ data });
 }
 
+export function listBloodInventoryForInstitution(institutionId: string) {
+  return database.bloodInventory.findMany({
+    where: { institutionId },
+    include: {
+      institution: { select: { id: true, name: true, type: true, address: true } },
+    },
+    orderBy: [
+      { bloodGroup: "asc" },
+      { component: "asc" },
+      { expiryDate: "asc" },
+      { lastUpdated: "desc" },
+    ],
+  });
+}
+
 export function updateBloodInventory(
   id: string,
   data: Prisma.BloodInventoryUpdateInput,
