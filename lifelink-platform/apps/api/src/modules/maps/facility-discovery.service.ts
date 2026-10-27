@@ -16,6 +16,9 @@ export interface DiscoveredFacility {
   website: string | null;
   openingHours: string | null;
   photoUrl: string | null;
+  /** Attribution for a freely licensed photo (Wikimedia Commons); null when no photo is shown. */
+  photoCredit?: string | null;
+  photoSourceUrl?: string | null;
   sourceUrl: string | null;
   retrievedAt: string;
   distanceKm: number | null;
@@ -105,6 +108,32 @@ function safeWebsite(value?: string) {
   catch { return null; }
 }
 
+/**
+ * Photos only from OpenStreetMap's Wikimedia Commons references, which are freely licensed and
+ * credited. Arbitrary `image` URLs on other hosts are never hotlinked, and nothing is generated.
+ */
+export function commonsPhotoFromTags(tags: Record<string, string>): { photoUrl: string; photoCredit: string; photoSourceUrl: string } | null {
+  const commons = tags.wikimedia_commons?.trim();
+  if (commons && /^File:[^/\\#?]+\.(?:jpe?g|png|webp)$/i.test(commons)) {
+    const file = commons.slice(5).replace(/ /g, "_");
+    return {
+      photoUrl: `https://commons.wikimedia.org/wiki/Special:FilePath/${encodeURIComponent(file)}?width=480`,
+      photoCredit: "Photo: Wikimedia Commons (see source for author and licence)",
+      photoSourceUrl: `https://commons.wikimedia.org/wiki/File:${encodeURIComponent(file)}`,
+    };
+  }
+  const image = tags.image?.trim();
+  if (image) {
+    try {
+      const url = new URL(image);
+      if (url.protocol === "https:" && !url.username && !url.password && url.hostname === "upload.wikimedia.org" && /\.(?:jpe?g|png|webp)$/i.test(url.pathname)) {
+        return { photoUrl: url.toString(), photoCredit: "Photo: Wikimedia Commons (see source for author and licence)", photoSourceUrl: url.toString() };
+      }
+    } catch { /* Malformed image tags are ignored. */ }
+  }
+  return null;
+}
+
 export function mapExternalPlace(place: Place, category: FacilityCategory, center: Coordinates): DiscoveredFacility | null {
   const tags = place.tags ?? {};
   if (!["node", "way", "relation"].includes(place.type) || !Number.isSafeInteger(place.id) || place.id <= 0) return null;
@@ -113,10 +142,11 @@ export function mapExternalPlace(place: Place, category: FacilityCategory, cente
   const distanceKm = Math.round(calculateDistance(center.latitude, center.longitude, latitude, longitude) * 10) / 10;
   const type = externalType(tags, category);
   if (!matchesCategory(type, tags, category)) return null;
+  const photo = commonsPhotoFromTags(tags);
   return {
     id: `osm:${place.type}:${place.id}`, name: tags.name, type, address: externalAddress(tags), latitude, longitude,
     phone: safePhone(tags.phone || tags["contact:phone"]), website: safeWebsite(tags.website || tags["contact:website"]),
-    openingHours: tags.opening_hours || null, photoUrl: null, sourceUrl: `https://www.openstreetmap.org/${place.type}/${place.id}`, retrievedAt: new Date().toISOString(), distanceKm, source: "OPENSTREETMAP", verification: "EXTERNAL_LISTING",
+    openingHours: tags.opening_hours || null, photoUrl: photo?.photoUrl ?? null, photoCredit: photo?.photoCredit ?? null, photoSourceUrl: photo?.photoSourceUrl ?? null, sourceUrl: `https://www.openstreetmap.org/${place.type}/${place.id}`, retrievedAt: new Date().toISOString(), distanceKm, source: "OPENSTREETMAP", verification: "EXTERNAL_LISTING",
     emergencyServiceStatus: type === "EMERGENCY_DEPARTMENT" || tags.emergency === "yes" ? "LISTED" : "UNKNOWN",
     inventory: { status: "NOT_FOUND" },
     directionsUrl: `https://www.openstreetmap.org/directions?to=${latitude}%2C${longitude}`,

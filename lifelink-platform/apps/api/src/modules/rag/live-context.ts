@@ -10,7 +10,7 @@ import { database } from "@lifelink/database";
 import type { AuthContext } from "../../middleware/auth";
 import { ApiError } from "../../middleware/api-error";
 import { calculateDistance } from "../maps/geospatial.service";
-import type { QueryIntent } from "@lifelink/rag";
+import { isInstitutionDirectoryRequest, type AssistantResultStatus, type QueryIntent } from "@lifelink/rag";
 
 export type Coordinates = { latitude: number; longitude: number; displayName?: string } | null;
 type LiveOutcome = {
@@ -20,6 +20,7 @@ type LiveOutcome = {
   handoff?: { label: string; href: string; reason: string };
   data?: Record<string, unknown>;
   needsClarification?: boolean;
+  status?: AssistantResultStatus;
 };
 
 export interface UrgentBloodDetails {
@@ -50,6 +51,11 @@ const locationCache = new Map<string, { value: Coordinates; expiresAt: number }>
 let geocodeQueue: Promise<void> = Promise.resolve();
 let nextGeocodeAt = 0;
 
+/** "near me", "around here", "my location": the device location, never a place name to geocode. */
+function isSelfLocation(place: string): boolean {
+  return /^(?:me|us|here|my (?:current )?(?:location|area|place|home)|where i am|this area|my locality)$/i.test(place.trim());
+}
+
 function extractLocationParts(query: string): string[] {
   const parts = query.split(/[,;.!?\n]+/).map((part) => part.trim()).filter(Boolean);
   const candidates: string[] = [];
@@ -62,7 +68,7 @@ function extractLocationParts(query: string): string[] {
       .replace(/\s+/g, " ")
       .replace(/^[\s,.-]+|[\s,.-]+$/g, "")
       .trim();
-    if (place.length >= 2 && place.length <= 80 && !/^(?:the|a|an|some)$/i.test(place)) {
+    if (place.length >= 2 && place.length <= 80 && !/^(?:the|a|an|some)$/i.test(place) && !isSelfLocation(place)) {
       if (!candidates.some((existing) => existing.toLocaleLowerCase() === place.toLocaleLowerCase())) {
         candidates.push(place);
       }
@@ -93,7 +99,7 @@ export function extractLocationQuery(query: string): string | null {
       .replace(/\b(?:and i|and we|i urgently|we urgently|i need|we need|my father|my mother|the patient)\b.*$/i, "")
       .replace(/^\s*(?:the|a|an)\s+/i, "")
       .trim();
-    if (locality.length >= 2 && locality.length <= 80 && city.length >= 2 && city.length <= 80) {
+    if (locality.length >= 2 && locality.length <= 80 && city.length >= 2 && city.length <= 80 && !isSelfLocation(locality)) {
       return `${locality}, ${city}, India`;
     }
   }
@@ -154,8 +160,15 @@ function radiusFromQuery(query: string, nearby: boolean): number | undefined {
   return nearby ? 25 : undefined;
 }
 
-function parseBloodGroup(query: string): BloodGroup | null {
+export function parseBloodGroup(query: string): BloodGroup | null {
   const value = query.toLocaleLowerCase()
+    // "O-positive" is a hyphenated word, not "O minus": settle spelled-out forms before
+    // a bare hyphen is read as "negative".
+    .replace(/\b(ab|a|b|o)\s*[−–-]\s*(positive|negative)\b/g, "$1 $2")
+    .replace(/\b(ab|a|b|o)\s*[−–-]?\s*pos\b/g, "$1 positive")
+    .replace(/\b(ab|a|b|o)\s*[−–-]?\s*neg\b/g, "$1 negative")
+    .replace(/\b(ab|a|b|o)\s*\+\s*ve\b/g, "$1 positive")
+    .replace(/\b(ab|a|b|o)\s*[−–-]\s*ve\b/g, "$1 negative")
     .replace(/[+＋]/g, " positive ")
     .replace(/[−–-]/g, " negative ")
     .replace(/[_]+/g, " ")
@@ -355,6 +368,7 @@ async function findRequestStatus(query: string, actor: AuthContext): Promise<Liv
           answer: "I couldn't retrieve that record in your current access scope. Please open the Requests page and select a request you are authorized to view.",
           intent: "REQUEST_STATUS",
           liveDataUsed: false,
+          status: "NOT_PERMITTED",
           handoff: { label: "Open Requests", href: "/requests", reason: "Request details are protected and must be viewed through the authenticated workflow." },
         };
       }
@@ -404,8 +418,15 @@ async function findRequestStatus(query: string, actor: AuthContext): Promise<Liv
       answer: "I couldn't find a request record that is available in your current access scope. Check the reference and try again, or open Requests to select one of your records.",
       intent: "REQUEST_STATUS",
       liveDataUsed: false,
+      status: "NO_RESULTS",
       handoff: { label: "Open Requests", href: "/requests", reason: "Select a request you are authorized to view." },
     };
+  }
+
+  let donationSummary: LiveOutcome | null = null;
+  if (actor.principalType === "USER" && actor.userId && actor.role !== "ADMINISTRATOR" && /\b(?:donat(?:e|ion|ions|ing)|donor|pledge)\b/i.test(query)) {
+    donationSummary = await findDonationStatus(actor.userId);
+    if (donationSummary.status !== "NO_RESULTS") return donationSummary;
   }
 
   if (actor.role === "ADMINISTRATOR") {
@@ -427,10 +448,12 @@ async function findRequestStatus(query: string, actor: AuthContext): Promise<Liv
     take: 5,
   });
   if (!requests.length) {
+    if (donationSummary) return donationSummary;
     return {
       answer: "I couldn't find a recent request associated with this account. Open Requests to start or select a workflow, or share the request reference if you have it.",
       intent: "REQUEST_STATUS",
       liveDataUsed: true,
+      status: "NO_RESULTS",
       handoff: { label: "Open Requests", href: "/requests", reason: "View or start an authorized request workflow." },
     };
   }
@@ -445,17 +468,116 @@ async function findRequestStatus(query: string, actor: AuthContext): Promise<Liv
   };
 }
 
-async function searchLiveInventory(query: string): Promise<LiveOutcome> {
-  const bloodGroup = parseBloodGroup(query);
-  if (!bloodGroup) {
+/** The signed-in person's own blood-donation interests and organ-donor registrations. */
+async function findDonationStatus(userId: string): Promise<LiveOutcome> {
+  const [donations, organDonors] = await Promise.all([
+    database.donation.findMany({
+      where: { donorId: userId, donationType: "BLOOD" },
+      select: { id: true, bloodGroup: true, status: true, createdAt: true, providerInstitution: { select: { name: true } } },
+      orderBy: { createdAt: "desc" },
+      take: 5,
+    }),
+    database.organDonor.findMany({
+      where: { userId },
+      select: { reference: true, organType: true, status: true, consentStatus: true, createdAt: true, institution: { select: { name: true } } },
+      orderBy: { createdAt: "desc" },
+      take: 5,
+    }),
+  ]);
+  if (!donations.length && !organDonors.length) {
     return {
-      answer: "Which blood group should I look for (for example, O+, A−, or AB+)? You can also mention a component such as red blood cells, plasma, or platelets, and your city/locality if you want nearby results.",
-      intent: "LIVE_INVENTORY",
-      liveDataUsed: false,
-      needsClarification: true,
-      handoff: { label: "Open Inventory Search", href: "/inventory", reason: "You can also search using the structured inventory filters." },
+      answer: "I couldn't find a blood-donation interest or organ-donor registration linked to this account.",
+      intent: "REQUEST_STATUS",
+      liveDataUsed: true,
+      status: "NO_RESULTS",
+      handoff: { label: "Open Blood Services", href: "/blood-services", reason: "Register a donation interest or review your donation records." },
     };
   }
+  const lines: string[] = ["I checked the donation records linked to your account."];
+  if (donations.length) {
+    lines.push(`**Blood donation interests:**\n${donations.map((donation) =>
+      `- ${donation.providerInstitution?.name ?? "Participating facility"}${donation.bloodGroup ? ` · ${displayBloodGroup(donation.bloodGroup)}` : ""} — **${donation.status.replaceAll("_", " ")}**, registered ${donation.createdAt.toISOString().slice(0, 10)}`).join("\n")}`);
+  }
+  if (organDonors.length) {
+    lines.push(`**Organ-donor registrations:**\n${organDonors.map((donor) =>
+      `- ${donor.reference} · ${donor.organType.replaceAll("_", " ").toLowerCase()} at ${donor.institution.name} — **${donor.status.replaceAll("_", " ")}**, consent ${donor.consentStatus.replaceAll("_", " ").toLowerCase()}`).join("\n")}`);
+  }
+  lines.push("These are the statuses currently recorded by LifeLink; the facility confirms any appointment or next step.");
+  return {
+    answer: lines.join("\n\n"),
+    intent: "REQUEST_STATUS",
+    liveDataUsed: true,
+    status: "ANSWERED",
+    data: { recordType: "donation", donationCount: donations.length, organDonorCount: organDonors.length },
+    handoff: donations.length
+      ? { label: "Open Blood Services", href: "/blood-services", reason: "Open your donation interests for full details and eligible actions." }
+      : { label: "Open Organ Services", href: "/organ-services", reason: "Open your organ-donor registration for full details." },
+  };
+}
+
+/** Per-group totals across participating facilities, for "show me the available blood inventory". */
+async function summarizeLiveInventory(): Promise<LiveOutcome> {
+  const records = await database.bloodInventory.findMany({
+    where: {
+      status: BloodInventoryStatus.AVAILABLE,
+      unitsAvailable: { gt: 0 },
+      OR: [{ expiryDate: null }, { expiryDate: { gt: new Date() } }],
+      institution: {
+        status: InstitutionStatus.ACTIVE,
+        deletedAt: null,
+        OR: [
+          { type: InstitutionType.BLOOD_BANK },
+          { type: InstitutionType.HOSPITAL, hospitalProfile: { is: { bloodService: { isNot: null } } } },
+        ],
+      },
+    },
+    select: { bloodGroup: true, unitsAvailable: true, lastUpdated: true, institutionId: true },
+    take: 1000,
+  });
+  if (!records.length) {
+    return {
+      answer: "I couldn't find any active, non-expired blood inventory record in LifeLink right now. That means no matching record exists in the current data; it doesn't prove that no blood is available at a facility.",
+      intent: "LIVE_INVENTORY",
+      liveDataUsed: true,
+      status: "NO_RESULTS",
+      data: { resultCount: 0 },
+      handoff: { label: "Open Inventory Search", href: "/inventory", reason: "Run a structured search and confirm with a facility." },
+    };
+  }
+  const now = Date.now();
+  const byGroup = new Map<BloodGroup, { units: number; facilities: Set<string>; latest: Date; stale: number }>();
+  for (const record of records) {
+    const entry = byGroup.get(record.bloodGroup) ?? { units: 0, facilities: new Set<string>(), latest: record.lastUpdated, stale: 0 };
+    entry.units += record.unitsAvailable;
+    entry.facilities.add(record.institutionId);
+    if (record.lastUpdated > entry.latest) entry.latest = record.lastUpdated;
+    if (now - record.lastUpdated.getTime() > 24 * 60 * 60 * 1000) entry.stale += 1;
+    byGroup.set(record.bloodGroup, entry);
+  }
+  const summary = Object.values(BloodGroup).filter((group) => byGroup.has(group)).map((group) => {
+    const entry = byGroup.get(group)!;
+    return { bloodGroup: group, units: entry.units, facilityCount: entry.facilities.size, latestUpdate: entry.latest.toISOString(), staleRecords: entry.stale };
+  });
+  const missing = Object.values(BloodGroup).filter((group) => !byGroup.has(group)).map(displayBloodGroup);
+  const facilityCount = new Set(records.map((record) => record.institutionId)).size;
+  return {
+    // Per-group totals are rendered from `data.summary`; the text stays a short overview.
+    answer: [
+      `Here is the current LifeLink blood inventory across ${facilityCount} participating ${facilityCount === 1 ? "facility" : "facilities"} (all components, not filtered by location). ${summary.length} of 8 blood groups have an active record.`,
+      missing.length ? `No active record for: ${missing.join(", ")}.` : "",
+      "These are database records, not a guarantee of availability. Ask about one group, for example “Is O-positive blood available?”, to see the facilities and their contact numbers.",
+    ].filter(Boolean).join("\n\n"),
+    intent: "LIVE_INVENTORY",
+    liveDataUsed: true,
+    status: "ANSWERED",
+    data: { resultCount: summary.length, summary },
+    handoff: { label: "Open Inventory Search", href: "/inventory", reason: "Filter by group, component, and location in the structured search." },
+  };
+}
+
+async function searchLiveInventory(query: string): Promise<LiveOutcome> {
+  const bloodGroup = parseBloodGroup(query);
+  if (!bloodGroup) return summarizeLiveInventory();
 
   const location = extractLocationQuery(query);
   const nearby = /\b(nearby|nearest|closest|around me|near me|within)\b/i.test(query);
@@ -519,7 +641,10 @@ async function searchLiveInventory(query: string): Promise<LiveOutcome> {
       group: displayBloodGroup(record.bloodGroup),
       component: record.component.replaceAll("_", " "),
       unitsAvailable: record.unitsAvailable,
+      institutionId: record.institution.id,
       institution: record.institution.name,
+      latitude: record.institution.latitude,
+      longitude: record.institution.longitude,
       address: record.institution.address,
       contactNumber: record.institution.contactNumber,
       distanceKm: distanceKm === undefined ? null : Math.round(distanceKm * 10) / 10,
@@ -539,34 +664,85 @@ async function searchLiveInventory(query: string): Promise<LiveOutcome> {
     };
   }
 
-  const lines = candidates.map((item, index) => {
-    const details = [
-      `${index + 1}. **${item.institution}**`,
-      `${item.address}`,
-      `**${item.unitsAvailable}** unit(s) recorded for ${item.group} ${item.component}.`,
-      item.distanceKm !== null ? `Approx. ${item.distanceKm} km away.` : "",
-      item.contactNumber ? `Facility contact: ${item.contactNumber}.` : "",
-      `Inventory last updated: ${item.lastUpdated}.`,
-      item.stale ? "⚠️ This record has not been updated in the last 24 hours; confirm directly with the facility." : "",
-      item.expiryDate ? `Recorded expiry date: ${item.expiryDate}.` : "",
-    ].filter(Boolean);
-    return details.join("\n");
-  });
   const scopeLine = coords && radius !== undefined
-    ? `I checked active LifeLink blood-bank/hospital inventory within ${radius} km of ${coords.displayName ?? location}.`
-    : "I checked the current inventory records at participating LifeLink facilities; because no search location was provided, these results are not ranked by proximity.";
+    ? `I checked active LifeLink blood-bank and hospital inventory within ${radius} km of ${coords.displayName ?? location}`
+    : "I checked current inventory records at participating LifeLink facilities (not ranked by distance, because no location was given)";
+  const staleCount = candidates.filter((item) => item.stale).length;
   return {
-    answer: `${scopeLine}\n\n${lines.join("\n\n")}\n\nThese are current database records, not a guarantee of availability. Please contact the facility to confirm before travelling or making care decisions.`,
+    // The records themselves travel as structured data (`candidates`) and are rendered as cards.
+    answer: `${scopeLine}: ${candidates.length} ${candidates.length === 1 ? "facility has" : "facilities have"} a ${displayBloodGroup(bloodGroup)}${component ? ` ${component.replaceAll("_", " ").toLowerCase()}` : ""} record.${staleCount ? ` ${staleCount} of them ${staleCount === 1 ? "has" : "have"} not been updated in the last 24 hours.` : ""}\n\nThese are database records, not a guarantee of availability. Call the facility to confirm before travelling or making care decisions.`,
     intent: "LIVE_INVENTORY",
     liveDataUsed: true,
+    status: "ANSWERED",
     data: { resultCount: candidates.length, searchedGroup: bloodGroup, component: component ?? null, radiusKm: radius ?? null, candidates },
     handoff: { label: "Open Inventory Search", href: "/inventory", reason: "Use the structured search to refine the request and view the full current records." },
   };
 }
 
-async function discoverLiveFacilities(query: string): Promise<LiveOutcome> {
+function directoryPhone(value: string | null) {
+  if (!value || !/^[+\d().\-\s]+$/.test(value.trim())) return null;
+  const digits = value.replace(/\D/g, "").length;
+  return digits >= 7 && digits <= 15 ? value.trim() : null;
+}
+
+/** "Which institutions are registered on LifeLink?" — the active directory, not a proximity search. */
+async function listRegisteredInstitutions(query: string): Promise<LiveOutcome> {
+  const wantsOrgan = /\b(organ|transplant)\b/i.test(query);
+  const wantsBlood = /\b(blood|blood bank|blood centre|blood center)\b/i.test(query);
+  const wantsHospital = /\bhospitals?\b/i.test(query) && !wantsOrgan && !wantsBlood;
+  const typeFilter = wantsOrgan
+    ? [{ type: InstitutionType.ORGAN_CENTRE }, { type: InstitutionType.HOSPITAL, hospitalProfile: { is: { organService: { isNot: null } } } }]
+    : wantsBlood
+      ? [{ type: InstitutionType.BLOOD_BANK }, { type: InstitutionType.HOSPITAL, hospitalProfile: { is: { bloodService: { isNot: null } } } }]
+      : wantsHospital ? [{ type: InstitutionType.HOSPITAL }]
+        : [{ type: InstitutionType.HOSPITAL }, { type: InstitutionType.BLOOD_BANK }, { type: InstitutionType.ORGAN_CENTRE }];
+  const institutions = await database.institution.findMany({
+    where: { status: InstitutionStatus.ACTIVE, deletedAt: null, OR: typeFilter },
+    select: { id: true, name: true, type: true, address: true, contactNumber: true, latitude: true, longitude: true },
+    orderBy: { name: "asc" },
+    take: 200,
+  });
+  const scope = wantsOrgan ? "organ-service" : wantsBlood ? "blood-service" : wantsHospital ? "hospital" : "healthcare";
+  if (!institutions.length) {
+    return {
+      answer: `I couldn't find an active, registered ${scope} institution in LifeLink right now.`,
+      intent: "FACILITY_DISCOVERY",
+      liveDataUsed: true,
+      status: "NO_RESULTS",
+      data: { resultCount: 0, directory: true },
+      handoff: { label: "Open Map", href: "/map", reason: "View registered facilities on the map." },
+    };
+  }
+  const counts = { HOSPITAL: 0, BLOOD_BANK: 0, ORGAN_CENTRE: 0 } as Record<string, number>;
+  for (const institution of institutions) counts[institution.type] = (counts[institution.type] ?? 0) + 1;
+  const breakdown = [
+    counts.HOSPITAL ? `${counts.HOSPITAL} ${counts.HOSPITAL === 1 ? "hospital" : "hospitals"}` : "",
+    counts.BLOOD_BANK ? `${counts.BLOOD_BANK} ${counts.BLOOD_BANK === 1 ? "blood bank" : "blood banks"}` : "",
+    counts.ORGAN_CENTRE ? `${counts.ORGAN_CENTRE} ${counts.ORGAN_CENTRE === 1 ? "organ centre" : "organ centres"}` : "",
+  ].filter(Boolean).join(", ");
+  const shown = institutions.slice(0, 12);
+  const retrievedAt = new Date().toISOString();
+  const facilities = shown.map((institution) => ({
+    id: `lifelink:${institution.id}`, name: institution.name, type: institution.type, address: institution.address,
+    latitude: institution.latitude, longitude: institution.longitude, phone: directoryPhone(institution.contactNumber),
+    website: null, openingHours: null, photoUrl: null, sourceUrl: null, retrievedAt, distanceKm: null,
+    source: "LIFELINK", verification: "REGISTERED_ACTIVE", emergencyServiceStatus: "UNKNOWN", inventory: { status: "NOT_FOUND" },
+    directionsUrl: institution.latitude !== null && institution.longitude !== null ? `https://www.openstreetmap.org/directions?to=${institution.latitude}%2C${institution.longitude}` : null,
+  }));
+  return {
+    answer: `LifeLink currently has ${institutions.length} active registered ${scope} ${institutions.length === 1 ? "institution" : "institutions"}${breakdown ? ` (${breakdown})` : ""}. ${institutions.length > shown.length ? `The first ${shown.length} alphabetically are listed below.` : "They are listed below."} Share a city or locality to see which are closest.`,
+    intent: "FACILITY_DISCOVERY",
+    liveDataUsed: true,
+    status: "ANSWERED",
+    data: { resultCount: institutions.length, directory: true, facilities, center: null, facilityProvider: "LIFELINK", facilityListTitle: "Registered LifeLink institutions" },
+    handoff: { label: "Open Map", href: "/map", reason: "See registered institutions on the map." },
+  };
+}
+
+async function discoverLiveFacilities(query: string, presetCenter: Coordinates = null): Promise<LiveOutcome> {
   const location = extractLocationQuery(query);
-  if (!location) {
+  if (!location && !presetCenter && isInstitutionDirectoryRequest(query)) return listRegisteredInstitutions(query);
+  if (!location && !presetCenter) {
     return {
       answer: "I can look for nearby healthcare facilities. If location access is available, nearby options will appear here; otherwise, use the current-location action or search by city or locality. I won't invent a facility or claim it is nearby without a usable location.",
       intent: "FACILITY_DISCOVERY",
@@ -575,10 +751,10 @@ async function discoverLiveFacilities(query: string): Promise<LiveOutcome> {
       handoff: { label: "Open Map", href: "/map", reason: "The map lets you choose a location and facility type." },
     };
   }
-  const coords = await geocodeLocation(location);
+  const coords = location ? await geocodeLocation(location) : presetCenter;
   if (!coords) {
     return {
-      answer: `I couldn't resolve **${location.replace(/,\s*India$/i, "")}** to reliable coordinates. Please provide a more specific locality and city, or use the map page. I won't recommend a facility as nearby without usable location information.`,
+      answer: `I couldn't resolve **${(location ?? "that location").replace(/,\s*India$/i, "")}** to reliable coordinates. Please provide a more specific locality and city, or use the map page. I won't recommend a facility as nearby without usable location information.`,
       intent: "FACILITY_DISCOVERY",
       liveDataUsed: false,
       needsClarification: true,
@@ -621,10 +797,10 @@ async function discoverLiveFacilities(query: string): Promise<LiveOutcome> {
   const asksCamp = /\b(camp|camps|upcoming)\b/i.test(query);
   if (!candidates.length) {
     return {
-      answer: `I couldn't find a registered, active ${wantsOrgan ? "organ-service" : wantsBlood ? "blood-service" : "healthcare"} facility with usable coordinates within ${radius} km of ${coords.displayName ?? location}. ${missingCoordinates ? "Some registered institutions do not have coordinates, so they could not be confirmed as nearby. " : ""}Try the map page or ask an administrator to update facility location data.`,
+      answer: `I couldn't find a registered, active ${wantsOrgan ? "organ-service" : wantsBlood ? "blood-service" : "healthcare"} facility with usable coordinates within ${radius} km of ${coords.displayName ?? location ?? "the previous search area"}. ${missingCoordinates ? "Some registered institutions do not have coordinates, so they could not be confirmed as nearby. " : ""}Try the map page or ask an administrator to update facility location data.`,
       intent: "FACILITY_DISCOVERY",
       liveDataUsed: true,
-      data: { resultCount: 0, radiusKm: radius, location: coords.displayName ?? location },
+      data: { resultCount: 0, radiusKm: radius, location: coords.displayName ?? location ?? "the previous search area" },
       handoff: { label: "Open Map", href: "/map", reason: "View registered facilities and refine the location search." },
     };
   }
@@ -640,19 +816,71 @@ async function discoverLiveFacilities(query: string): Promise<LiveOutcome> {
     ? "\n\nLifeLink's current data model does not include a scheduled blood-donation-camp calendar, so I can identify registered facilities but cannot confirm upcoming camp dates."
     : "";
   return {
-    answer: `I checked registered, active LifeLink facilities within ${radius} km of ${coords.displayName ?? location}:\n\n${lines.join("\n\n")}${missingCoordinates ? "\n\nSome other registered facilities lack coordinates and could not be ranked by distance." : ""}${campNote}\n\nThese are facility records, not a guarantee of current services or donation availability. Contact the facility to confirm before travelling.`,
+    answer: `I checked registered, active LifeLink facilities within ${radius} km of ${coords.displayName ?? location ?? "the previous search area"}:\n\n${lines.join("\n\n")}${missingCoordinates ? "\n\nSome other registered facilities lack coordinates and could not be ranked by distance." : ""}${campNote}\n\nThese are facility records, not a guarantee of current services or donation availability. Contact the facility to confirm before travelling.`,
     intent: "FACILITY_DISCOVERY",
     liveDataUsed: true,
-    data: { resultCount: candidates.length, radiusKm: radius, location: coords.displayName ?? location, facilities: candidates, scheduledCampsAvailable: false },
+    data: { resultCount: candidates.length, radiusKm: radius, location: coords.displayName ?? location ?? "the previous search area", candidates, scheduledCampsAvailable: false },
     handoff: { label: "Open Map", href: "/map", reason: "View locations and continue facility discovery." },
   };
 }
 
-export async function fetchLiveContext(query: string, actor: AuthContext, intent: QueryIntent): Promise<LiveOutcome | null> {
+/** A fresh inventory check at one registered institution, for "Is blood available at that hospital?". */
+export async function fetchInstitutionInventory(institutionId: string, query: string): Promise<LiveOutcome> {
+  const bloodGroup = parseBloodGroup(query);
+  const component = parseComponent(query);
+  const label = `${bloodGroup ? `${displayBloodGroup(bloodGroup)} ` : ""}${component ? `${component.replaceAll("_", " ").toLowerCase()} ` : ""}`;
+  try {
+    if (!/^[0-9a-f-]{36}$/i.test(institutionId)) throw new Error("Invalid institution reference");
+    const institution = await database.institution.findFirst({
+      where: { id: institutionId, status: InstitutionStatus.ACTIVE, deletedAt: null },
+      select: { id: true, name: true, address: true, contactNumber: true, latitude: true, longitude: true },
+    });
+    if (!institution) {
+      return { answer: "That facility is not an active LifeLink institution any more, so I can't check its inventory.", intent: "LIVE_INVENTORY", liveDataUsed: true, status: "NO_RESULTS" };
+    }
+    const records = await database.bloodInventory.findMany({
+      where: {
+        institutionId, status: BloodInventoryStatus.AVAILABLE, unitsAvailable: { gt: 0 },
+        OR: [{ expiryDate: null }, { expiryDate: { gt: new Date() } }],
+        ...(bloodGroup ? { bloodGroup } : {}), ...(component ? { component } : {}),
+      },
+      select: { bloodGroup: true, component: true, unitsAvailable: true, lastUpdated: true, expiryDate: true },
+      orderBy: [{ bloodGroup: "asc" }, { component: "asc" }],
+      take: 50,
+    });
+    const contact = institution.contactNumber ? ` Call them on ${institution.contactNumber} to confirm.` : " Contact them directly to confirm.";
+    if (!records.length) {
+      return {
+        answer: `I checked LifeLink just now: **${institution.name}** has no active, non-expired ${label}blood inventory record. That doesn't prove they have none.${contact}`,
+        intent: "LIVE_INVENTORY", liveDataUsed: true, status: "NO_RESULTS",
+        data: { resultCount: 0, searchedGroup: bloodGroup, component: component ?? null },
+      };
+    }
+    const now = Date.now();
+    const candidates = records.map((record) => ({
+      group: displayBloodGroup(record.bloodGroup), component: record.component.replaceAll("_", " "), unitsAvailable: record.unitsAvailable,
+      institutionId: institution.id, institution: institution.name, address: institution.address, contactNumber: institution.contactNumber,
+      latitude: institution.latitude, longitude: institution.longitude, distanceKm: null,
+      lastUpdated: record.lastUpdated.toISOString(), stale: now - record.lastUpdated.getTime() > 24 * 60 * 60 * 1000,
+      expiryDate: record.expiryDate?.toISOString() ?? null,
+    }));
+    return {
+      answer: `I checked LifeLink just now: **${institution.name}** has ${records.length} active ${label}inventory ${records.length === 1 ? "record" : "records"}. These are database records, not a guarantee of availability.${contact}`,
+      intent: "LIVE_INVENTORY", liveDataUsed: true, status: "ANSWERED",
+      data: { resultCount: candidates.length, searchedGroup: bloodGroup, component: component ?? null, candidates },
+      handoff: { label: "Open Inventory Search", href: "/inventory", reason: "See the full current records in the structured search." },
+    };
+  } catch (error) {
+    console.error("LifeLink assistant institution inventory lookup failed", error instanceof Error ? error.name : "UnknownError");
+    return { answer: "I couldn't check that facility's inventory just now. No result has been confirmed; please try again shortly.", intent: "LIVE_INVENTORY", liveDataUsed: false, status: "UNAVAILABLE" };
+  }
+}
+
+export async function fetchLiveContext(query: string, actor: AuthContext, intent: QueryIntent, options: { center?: Coordinates } = {}): Promise<LiveOutcome | null> {
   try {
     if (intent === "REQUEST_STATUS") return await findRequestStatus(query, actor);
     if (intent === "LIVE_INVENTORY") return await searchLiveInventory(query);
-    if (intent === "FACILITY_DISCOVERY") return await discoverLiveFacilities(query);
+    if (intent === "FACILITY_DISCOVERY") return await discoverLiveFacilities(query, options.center ?? null);
     return null;
   } catch (error) {
     // External geocoding and live data dependencies fail closed. Never fall back to invented results.
@@ -662,6 +890,7 @@ export async function fetchLiveContext(query: string, actor: AuthContext, intent
       answer: "I couldn't access the live LifeLink data needed for that request right now. No live result has been confirmed. Please use the relevant LifeLink page and try again shortly.",
       intent,
       liveDataUsed: false,
+      status: "UNAVAILABLE",
       handoff: intent === "REQUEST_STATUS"
         ? { label: "Open Requests", href: "/requests", reason: "Check your authorized request records." }
         : intent === "LIVE_INVENTORY"

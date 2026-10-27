@@ -6,7 +6,8 @@ import { database } from "@lifelink/database";
 import { ApiError } from "../../middleware/api-error";
 import type { AuthContext } from "../../middleware/auth";
 import { recordAuditEvent } from "../audit/service";
-import { createAssistantInteractionId, generateAssistantResponse } from "./orchestrator";
+import { assessEmergency, createAssistantInteractionId, extractOperationalContext, generateAssistantResponse } from "./orchestrator";
+import { buildEmergencyAnswer } from "./emergency";
 
 const searchSchema = z.object({ q: z.string().trim().max(100).optional() }).strict();
 const createSchema = z.object({ title: z.string().trim().min(1).max(120).optional() }).strict();
@@ -25,6 +26,9 @@ const eventSchema = z.object({
     limitations: z.array(z.string()),
     handoff: z.object({ label: z.string(), href: z.string(), reason: z.string() }).strict().optional(),
     data: z.record(z.string(), z.unknown()).optional(),
+    status: z.enum(["ANSWERED", "NO_RESULTS", "NEEDS_INPUT", "UNAVAILABLE", "NOT_PERMITTED"]).optional(),
+    suggestions: z.array(z.string().max(160)).max(4).optional(),
+    display: z.enum(["conversation", "knowledge", "facilities", "inventory", "record", "emergency", "clarification", "unavailable"]).optional(),
   }).strict(),
 }).strict();
 
@@ -157,7 +161,21 @@ export async function sendAssistantConversationMessage(request: Request, respons
   const conversationId = requireUuid(request.params.id);
   const parsed = messageSchema.safeParse(request.body);
   if (!parsed.success) throw new ApiError(400, "INVALID_ASSISTANT_MESSAGE", "Enter a message under 2,000 characters with a valid message identifier.");
-  const conversation = await database.assistantConversation.findFirst({ where: ownedConversationWhere(conversationId, request.auth), select: { id: true, title: true } });
+  try {
+    await answerConversationMessage(request, response, conversationId, parsed.data);
+  } catch (error) {
+    // Emergency guidance must not depend on the database: if saving or loading the chat fails,
+    // still return the deterministic emergency answer (unsaved) instead of an error.
+    const emergency = error instanceof ApiError ? null : assessEmergency(parsed.data.message);
+    if (!emergency || response.headersSent) throw error;
+    console.error("LifeLink assistant storage failed during an emergency message", error instanceof Error ? error.name : "UnknownError");
+    response.json({ result: { ...buildEmergencyAnswer(emergency), messageId: randomUUID(), answeredAt: new Date().toISOString(), persisted: false } });
+  }
+}
+
+async function answerConversationMessage(request: Request, response: Response, conversationId: string, input: z.infer<typeof messageSchema>) {
+  const parsed = { data: input };
+  const conversation = await database.assistantConversation.findFirst({ where: ownedConversationWhere(conversationId, request.auth!), select: { id: true, title: true } });
   if (!conversation) throw new ApiError(404, "CONVERSATION_NOT_FOUND", "This conversation is unavailable.");
 
   const userKey = { conversationId_clientMessageId_role: { conversationId, clientMessageId: parsed.data.clientMessageId, role: AssistantMessageRole.USER } };
@@ -184,14 +202,17 @@ export async function sendAssistantConversationMessage(request: Request, respons
   const previousMessages = await database.assistantMessage.findMany({
     where: { conversationId, NOT: { id: userMessage.id } },
     orderBy: [{ createdAt: "desc" }, { id: "desc" }], take: 8,
-    select: { role: true, content: true },
+    select: { role: true, content: true, result: true },
   });
+  const recent = previousMessages.reverse().map((item) => ({ role: item.role === AssistantMessageRole.USER ? "user" as const : "assistant" as const, content: item.content, result: item.result }));
   let result;
   try {
     result = await generateAssistantResponse({
       message: userMessage.content,
-      actor: request.auth,
-      history: previousMessages.reverse().map((item) => ({ role: item.role === AssistantMessageRole.USER ? "user" as const : "assistant" as const, content: item.content })),
+      actor: request.auth!,
+      // Text history and operational state (stored facility lists) are passed separately.
+      history: recent.map(({ role, content }) => ({ role, content })),
+      operational: extractOperationalContext(recent),
     });
   } catch (error) {
     console.error("LifeLink assistant request failed", error instanceof Error ? error.name : "UnknownError");
@@ -205,7 +226,7 @@ export async function sendAssistantConversationMessage(request: Request, respons
     update: {},
   });
   await database.assistantConversation.update({ where: { id: conversationId }, data: { updatedAt: new Date() } });
-  await auditAnswer(request.auth, result);
+  await auditAnswer(request.auth!, result);
   response.json({ result: { ...result, messageId: assistantMessage.id, answeredAt: assistantMessage.createdAt.toISOString() } });
 }
 

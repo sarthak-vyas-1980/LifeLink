@@ -18,6 +18,19 @@ On 26 October, before the fixes, 89 of 96 automated tests passed and 7 known-def
 
 Live AI results depend on Google's Gemini service. When it returns `503 UNAVAILABLE: model is experiencing high demand`, the assistant fails safe and the case is reported as **inconclusive** rather than passed or failed.
 
+### Assistant routing and safety update (27 October 2026)
+
+After the assistant was reworked (deterministic emergency triage, route planning, follow-ups on earlier results, hybrid requests, result states and suggestions), the suites were rerun:
+
+| Layer | Tests | Passed | Failed |
+|---|---|---|---|
+| Unit (adds `tests/unit/assistant-routing.test.ts` and `tests/unit/assistant-ui.test.ts`: UT-RT, UT-EM, UT-CTX, UT-RAG, UT-HY, UT-UI, UT-FAC, UT-TXT, UT-LOC) | 106 | 106 | 0 |
+| Integration (adds `tests/integration/assistant-live.test.ts`: IT-AI-01..04) | 19 | 19 | 0 |
+
+Map rendering (pins, popups, list/map selection, Fit all/Recenter, mobile list/map toggle) has no automated test because the project has no DOM test environment; it was checked by hand in the browser against the test API.
+
+The end-to-end and live AI suites were not rerun for this change. A manual browser check against the test API found two defects that are now fixed and covered: "O-positive" was parsed as O-negative (UT-RT-05), and an earlier "I need …" turn combined with a later "blood" turn into a false urgent-blood request (UT-CTX-02).
+
 ## 2. Test layers
 
 | Layer | Folder | What it exercises | Needs | Command |

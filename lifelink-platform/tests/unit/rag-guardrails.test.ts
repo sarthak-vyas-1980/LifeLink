@@ -158,8 +158,11 @@ test("UT-AI-08 live stock questions are answered from LifeLink data paths, never
     const result = await generateAssistantResponse({ message: "How many units are in stock right now?", actor: user, history: [] });
     assert.equal(result.intent, "LIVE_INVENTORY");
     assert.equal(captured.generations.length, 0);
+    // Without a blood group the assistant summarises live inventory; with no reachable database
+    // it must say so rather than let the model's "42 units" through.
     assert.equal(result.liveDataUsed, false);
-    assert.match(result.answer, /Which blood group/);
+    assert.equal(result.status, "UNAVAILABLE");
+    assert.match(result.answer, /couldn't access the live LifeLink data/);
     assert.doesNotMatch(result.answer, /\b\d+ units\b/);
   });
 });

@@ -16,9 +16,14 @@ import {
   type QueryIntent,
   type RetrievedKnowledgeChunk,
 } from "@lifelink/rag";
-import { isUrgentBloodRequest } from "@lifelink/rag";
-import { extractLocationQuery, extractUrgentBloodDetails } from "./live-context";
+import { isCapabilityQuestion, isDetailReply, isInstitutionDirectoryRequest, isUrgentBloodRequest, type AssistantDisplay, type AssistantResultStatus } from "@lifelink/rag";
+import { extractLocationQuery, extractUrgentBloodDetails, fetchInstitutionInventory } from "./live-context";
 import { searchDiscoveredFacilities, type FacilityCategory } from "../maps/facility-discovery.service";
+import { assessEmergency, buildEmergencyAnswer } from "./emergency";
+import { inferFacilityCategory, planAssistantRoute, toRouteSummary, type FacilityRef, type FollowUp, type OperationalContext, type RoutePlan } from "./routing";
+
+export { assessEmergency, detectEmergencySeverity } from "./emergency";
+export { extractOperationalContext, planAssistantRoute, type OperationalContext } from "./routing";
 
 const LIVE_INTENTS: QueryIntent[] = ["REQUEST_STATUS", "LIVE_INVENTORY", "FACILITY_DISCOVERY"];
 
@@ -75,10 +80,12 @@ export function detectQueryIntent(message: string): QueryIntent {
 
 export function isUrgentOrganAssistance(message: string, history: ConversationTurn[] = []): boolean {
   if (classifyQueryIntent(message) === "FACILITY_DISCOVERY" && !/\b(?:organ|transplant|recipient)\b/i.test(message)) return false;
-  const userContext = [...history.filter((turn) => turn.role === "user").map((turn) => turn.content), message].join("\n");
-  return /\b(?:urgent(?:ly)?|immediately|right now|asap|emergency)\b/i.test(userContext) &&
-    /\b(?:need|needs|require|required|seeking|looking for|request(?:ing)?)\b/i.test(userContext) &&
-    /\b(?:organ|transplant|recipient)\b/i.test(userContext);
+  const describesOrganNeed = (text: string) => /\b(?:urgent(?:ly)?|immediately|right now|asap|emergency)\b/i.test(text) &&
+    /\b(?:need|needs|require|required|seeking|looking for|request(?:ing)?)\b/i.test(text) &&
+    /\b(?:organ|transplant|recipient)\b/i.test(text);
+  if (describesOrganNeed(message)) return true;
+  // As for blood: history only completes the request when this turn supplies a missing detail.
+  return isDetailReply(message) && history.filter((turn) => turn.role === "user").slice(-3).some((turn) => describesOrganNeed(turn.content));
 }
 
 function hasFirstAidEmergencyWarning(message: string): boolean {
@@ -109,50 +116,14 @@ export function needsPromptInjuryAssessment(message: string): boolean {
   return /\b(?:cannot|can't|unable to) (?:put weight|bear weight|walk)|\b(?:severe|substantial|rapid|rapidly worsening) (?:pain|swelling)|\b(?:suspected|possible) fracture\b|\b(?:worsening|spreading) redness|\b(?:pus|red streaks)\b/i.test(message);
 }
 
-const emergencySymptomPatterns = [
-  /\b(?:heavy (?:or uncontrolled )?(?:bleeding|blood loss)|uncontrolled bleeding|severe bleeding|bleeding (?:heavily|profusely|uncontrollably|won't|will not|doesn't|isn't) stop|can't stop (?:the )?bleeding|cannot stop (?:the )?bleeding|spurting blood|lost (?:a lot|lots|too much|a large amount|significant amounts?) of blood|significant blood loss|bled (?:a lot|heavily)|blood loss)\b/i,
-  /\b(?:unconscious|unresponsive|not waking|difficult to wake|hard to wake|difficulty (?:waking|awakening)|difficulty breathing|breathing is (?:very )?(?:difficult|hard)|severe breathing (?:difficulty|problems?)|struggling to breathe|trouble breathing|can't breathe|cannot breathe|gasping for air|suspected shock|signs of shock|electric shock|severe allergic reaction)\b/i,
-  /\b(?:major (?:accidents?|traumas?)|serious (?:crash|collision|accident|trauma|head injury|neck injury|spinal injury)|serious (?:head|neck|spinal) injuries?|serious head,? neck,? (?:or )?spinal injuries?|fell from (?:a )?(?:roof|ladder|height)|deep (?:or )?(?:severe )?(?:wounds?|cuts?)|severe wounds?|wound is deep|severe deformity|limb (?:at an )?odd angle|bone (?:is )?visible|spinal injury)\b/i,
-  /\b(?:severe chest pain|crushing (?:chest )?pain|chest pressure (?:and|with) (?:sweating|breathlessness|shortness of breath))\b/i,
-  /\b(?:stroke(?:[- ]like)? symptoms?|face drooping|one[- ]sided weakness|sudden(?:ly)? (?:slurred speech|trouble speaking|(?:can't|cannot) speak clearly))\b/i,
-  // Everyday descriptions of the same stroke signs ("her face is drooping", "speech became slurred").
-  /\b(?:face (?:is |has |was |started |began )?droop(?:s|ing|ed|y)?|(?:drooping|droopy) face|slurred speech (?:came on |started )?(?:suddenly|all of a sudden)|(?:speech|words?) (?:suddenly )?(?:became|become|is|are|got|went) slurred|(?:sudden )?(?:weakness|numbness) (?:on|in|down) one side|(?:one|left|right) side of (?:his|her|their|my|the) (?:face|body) (?:droops|is drooping|went numb|is numb|is weak))\b/i,
-  /\b(?:severe (?:burns?|burn)|large (?:or deep )?burn|large deep burn|chemical burn|electrical burn|burns? (?:over|covering) (?:a )?large area)\b/i,
-  /\b(?:new numbness|numbness after (?:the )?injury|tingling after (?:the )?injury|limb is (?:blue|cold)|cold or blue limb|embedded object)\b/i,
-];
-
-function includesEmergencySymptoms(text: string) {
-  return emergencySymptomPatterns.some((pattern) => pattern.test(text));
-}
-
-/** Critical severity is decided deterministically before Gemini, RAG, or operational lookups. */
-export function detectEmergencySeverity(message: string, history: ConversationTurn[] = []): boolean {
-  const educationalContext = /\b(?:what are (?:the )?(?:warning )?(?:signs|symptoms)|explain|define|for (?:a )?(?:story|novel|class|course|exam|project)|writing (?:a )?(?:story|novel)|hypothetically|in a fictional)\b/i.test(message);
-  const activePersonDescription = /\b(?:i|my|someone|a person|the patient|my friend|my child|he|she|they)\b[\s\S]{0,100}\b(?:is|has|lost|fell|bleeding|bleeds|can't|cannot|unable|unconscious|pain|injury|wound)\b/i.test(message);
-  if (educationalContext && !activePersonDescription) return false;
-  if (includesEmergencySymptoms(message)) return true;
-  const referentialFollowUp = /\b(?:it|that|the bleeding|the blood loss|he|she|they)\b[\s\S]{0,60}\b(?:worse|worsening|now|won't stop|cannot stop|can't stop|unconscious|not waking|can't breathe|cannot breathe)\b/i.test(message);
-  if (!referentialFollowUp) return false;
-  const recentUserContext = history.filter((turn) => turn.role === "user").slice(-3).map((turn) => turn.content).join(" ");
-  return includesEmergencySymptoms(recentUserContext);
-}
-
-function deterministicEmergencyAnswer(): AssistantAnswer {
-  return {
-    answer: "This may be life-threatening. Call emergency services now: 112 in India. Do not drive yourself. If bleeding, press firmly and continuously on the wound with clean cloth or gauze while help is arranged; if it soaks through, add more material without removing the first layer. Do not remove embedded objects or probe the wound. If safe and it will not worsen another injury, lie down, stay warm, and have someone stay with you. Follow the emergency dispatcher’s instructions. You can search for nearby hospitals below as an additional step; do not delay calling.",
-    intent: "EMERGENCY", knowledgeUsed: false, liveDataUsed: false, sources: [],
-    limitations: ["Emergency instructions are general first aid and do not diagnose the cause or severity of the injury."],
-    data: { emergency: { phoneNumber: "112", country: "IN", severity: "CRITICAL" } },
-  };
-}
-
 // Read-only operational lookup. State-changing work is always handed back to the existing application workflow.
 export async function fetchLiveContext(
   message: string,
   actor: AuthContext,
   intent: QueryIntent,
+  options: { center?: { latitude: number; longitude: number; displayName?: string } | null } = {},
 ) {
-  return fetchLiveContextImpl(message, actor, intent);
+  return fetchLiveContextImpl(message, actor, intent, options);
 }
 
 import { fetchLiveContext as fetchLiveContextImpl, fetchUrgentBloodContext } from "./live-context";
@@ -172,14 +143,406 @@ export function assembleGroundedContext(
   });
 }
 
+const FACILITY_TYPE_LABEL: Record<string, string> = {
+  HOSPITAL: "hospital", EMERGENCY_DEPARTMENT: "emergency department", CLINIC: "clinic / doctors", PHARMACY: "pharmacy",
+  BLOOD_BANK: "blood bank", ORGAN_CENTRE: "organ centre", OTHER_HEALTHCARE_FACILITY: "healthcare facility",
+};
+const CATEGORY_LABEL: Record<FacilityCategory, string> = {
+  blood: "blood bank", hospital: "hospital", clinic: "clinic", care: "clinic or hospital", pharmacy: "pharmacy",
+  other: "healthcare facility", emergency: "emergency-capable hospital", organ: "organ-service facility", all: "healthcare facility",
+};
+
+function capabilityAnswer(): AssistantAnswer {
+  return {
+    answer: [
+      "I’m the LifeLink Assistant. I can help you:",
+      "- understand LifeLink and the blood and organ donation workflows, answered from LifeLink’s approved documents with sources;",
+      "- check live LifeLink records: blood inventory by group, the status of your own requests or donations, and the registered institutions;",
+      "- find nearby hospitals, clinics, pharmacies, and blood banks on a map, using your location only if you allow it or a place you type;",
+      "- get general first-aid guidance, and emergency help (112) when something sounds serious;",
+      "- with everyday questions and writing.",
+      "I can’t diagnose, prescribe, decide donor eligibility or compatibility, or submit requests for you; those go through the LifeLink forms.",
+    ].join("\n"),
+    intent: "GENERAL_CONVERSATION", knowledgeUsed: false, liveDataUsed: false, sources: [], limitations: [], status: "ANSWERED",
+    suggestions: ["Find hospitals near me", "Is O-positive blood available?", "How does organ donation work?"],
+  };
+}
+
+function noPreviousListAnswer(): AssistantAnswer {
+  return {
+    answer: "I don’t have an earlier list of facilities in this chat to refer back to. Tell me what you’re looking for and where, for example “Find hospitals near <your locality>”, or use your current location.",
+    intent: "AMBIGUOUS", knowledgeUsed: false, liveDataUsed: false, sources: [], limitations: [], status: "NEEDS_INPUT",
+  };
+}
+
+function safeDirections(facility: FacilityRef): string | null {
+  if (facility.directionsUrl && /^https:\/\/(?:www\.)?openstreetmap\.org\/directions\?/.test(facility.directionsUrl)) return facility.directionsUrl;
+  return facility.latitude !== null && facility.longitude !== null ? `https://www.openstreetmap.org/directions?to=${facility.latitude}%2C${facility.longitude}` : null;
+}
+
+function describeFacility(facility: FacilityRef, options: { withDirectionsUrl: boolean }): string {
+  const directions = safeDirections(facility);
+  return [
+    `**${facility.index + 1}. ${facility.name}**${facility.type ? ` (${FACILITY_TYPE_LABEL[facility.type] ?? "healthcare facility"})` : ""}`,
+    facility.address ?? "Address not listed.",
+    facility.distanceKm !== null ? `About ${facility.distanceKm} km away in a straight line (not road distance).` : "",
+    facility.phone ? `Phone: ${facility.phone}` : "No phone number is listed for this facility.",
+    directions ? options.withDirectionsUrl ? `Directions: ${directions}` : "Use Directions below for a route." : "",
+  ].filter(Boolean).join("\n");
+}
+
+/** Re-shows stored results; availability is never restated from an earlier lookup. */
+function followUpData(operational: OperationalContext, selectedIndex: number | null): Record<string, unknown> | undefined {
+  if (!operational.renderable) return undefined;
+  return {
+    facilities: operational.facilities.map((facility) => facility.raw),
+    center: operational.center,
+    facilityProvider: operational.provider ?? "UNAVAILABLE",
+    facilityCategory: operational.category,
+    inventoryNotRechecked: true,
+    attribution: "© OpenStreetMap contributors",
+    ...(selectedIndex !== null ? { selectedFacilityIndex: selectedIndex, selectedFacilityId: operational.facilities[selectedIndex]?.raw?.id } : {}),
+  };
+}
+
+/** The LifeLink institution behind a stored result, if it is a registered facility. */
+function registeredInstitutionId(facility: FacilityRef): string | null {
+  const raw = facility.raw ?? {};
+  if (typeof raw.institutionId === "string") return raw.institutionId;
+  return typeof raw.id === "string" && raw.id.startsWith("lifelink:") ? raw.id.slice("lifelink:".length) : null;
+}
+
+async function answerFacilityFollowUp(followUp: Exclude<FollowUp, { kind: "NO_CONTEXT" }>, operational: OperationalContext, message: string): Promise<AssistantAnswer> {
+  const { facilities } = operational;
+  const base = { intent: "FACILITY_DISCOVERY" as const, knowledgeUsed: false, sources: [] };
+  const limitations = ["Details come from the earlier results in this chat. Distances are straight-line. Availability was not re-checked; confirm directly with the facility."];
+  const stockNote = (facility: FacilityRef) => facility.hadInventory ? "\n\nI haven’t re-checked stock here; ask me to check that blood group again for current records." : "";
+
+  if (followUp.kind === "AVAILABILITY") {
+    const requested = followUp.index ?? operational.selectedIndex ?? (facilities.length === 1 ? 0 : null);
+    if (requested === null || requested < 0 || requested >= facilities.length) {
+      return { ...base, liveDataUsed: false, limitations, status: "NEEDS_INPUT",
+        answer: `Which facility should I check?\n\n${facilities.slice(0, 8).map((facility) => `${facility.index + 1}. ${facility.name}`).join("\n")}` };
+    }
+    const facility = facilities[requested];
+    const institutionId = registeredInstitutionId(facility);
+    if (!institutionId) {
+      return { ...base, liveDataUsed: false, limitations, status: "NO_RESULTS", data: followUpData(operational, requested),
+        answer: `**${facility.name}** is a public map listing, not a LifeLink-registered facility, so LifeLink has no inventory records for it.${facility.phone ? ` You can call them on ${facility.phone} to ask.` : " Contact them directly to ask."}` };
+    }
+    const live = await fetchInstitutionInventory(institutionId, message);
+    return { ...base, intent: "LIVE_INVENTORY", liveDataUsed: live.liveDataUsed, status: live.status ?? "ANSWERED", answer: live.answer,
+      limitations: ["Checked against LifeLink records just now. Records are not a guarantee of availability; confirm with the facility."],
+      ...(live.handoff ? { handoff: live.handoff } : {}), ...(live.data ? { data: live.data } : {}) };
+  }
+
+  if (followUp.kind === "CLOSEST") {
+    const ranked = facilities.filter((facility) => facility.distanceKm !== null).sort((a, b) => a.distanceKm! - b.distanceKm!);
+    if (!ranked.length) {
+      return { ...base, liveDataUsed: false, limitations, status: "NEEDS_INPUT",
+        answer: "The earlier results didn’t include distances, so I can’t tell which is closest. Share your locality or use your current location and I’ll search nearby." };
+    }
+    const closest = ranked[0];
+    return { ...base, liveDataUsed: false, limitations, status: "ANSWERED", data: followUpData(operational, closest.index),
+      answer: `The closest one is **${closest.name}**, about ${closest.distanceKm} km away in a straight line.\n\n${describeFacility(closest, { withDirectionsUrl: !operational.renderable })}${stockNote(closest)}` };
+  }
+
+  if (followUp.kind === "MORE") {
+    if (!operational.center) {
+      return { ...base, liveDataUsed: false, limitations, status: "NEEDS_INPUT",
+        answer: "Those results weren’t tied to a search point, so I can’t widen them. Share a city or locality, or use your current location, and I’ll search a wider area." };
+    }
+    const category = operational.category ?? "all";
+    const result = await searchDiscoveredFacilities({ latitude: operational.center.latitude, longitude: operational.center.longitude, category, radiusKm: 50 }).catch(() => null);
+    if (!result || (!result.facilities.length && result.unavailableReason && result.unavailableReason !== "NOT_CONFIGURED")) {
+      return { ...base, liveDataUsed: false, limitations, status: "UNAVAILABLE",
+        answer: "I couldn’t widen the search just now because the facility provider didn’t respond. That doesn’t mean there are no other options; please retry shortly." };
+    }
+    const shown = new Set(facilities.map((facility) => String(facility.raw?.id ?? facility.name)));
+    const added = result.facilities.filter((facility) => !shown.has(facility.id)).length;
+    return {
+      ...base, liveDataUsed: result.facilities.some((facility) => facility.source === "LIFELINK"), status: result.facilities.length ? "ANSWERED" : "NO_RESULTS",
+      limitations: ["Distances are straight-line from the same search point. Confirm services directly before travelling."],
+      answer: result.facilities.length
+        ? `I widened the search to 50 km around the same point and found ${result.facilities.length} ${CATEGORY_LABEL[category]} ${result.facilities.length === 1 ? "option" : "options"}${added ? `, ${added} of them new` : ""}.`
+        : `I couldn’t find any listed ${CATEGORY_LABEL[category]} within 50 km of that search point.`,
+      data: { facilities: result.facilities, center: result.center ?? operational.center, facilityProvider: result.provider, facilityCategory: category, ...(result.unavailableReason ? { providerUnavailableReason: result.unavailableReason } : {}), attribution: "© OpenStreetMap contributors" },
+    };
+  }
+
+  if (followUp.kind === "SELECT" || followUp.kind === "CONTACT" || followUp.kind === "DIRECTIONS") {
+    const requested = followUp.index ?? operational.selectedIndex ?? (facilities.length === 1 ? 0 : null);
+    if (requested !== null && (requested < 0 || requested >= facilities.length)) {
+      return { ...base, liveDataUsed: false, limitations, status: "NEEDS_INPUT",
+        answer: `The earlier list had ${facilities.length} ${facilities.length === 1 ? "result" : "results"}. Which one did you mean?\n\n${facilities.slice(0, 8).map((facility) => `${facility.index + 1}. ${facility.name}`).join("\n")}` };
+    }
+    if (requested === null) {
+      const top = facilities.slice(0, 3);
+      const lines = followUp.kind === "DIRECTIONS"
+        ? top.map((facility) => `${facility.index + 1}. **${facility.name}** — ${safeDirections(facility) ?? "no map location listed"}`)
+        : top.map((facility) => `${facility.index + 1}. **${facility.name}** — ${facility.phone ?? "no phone number listed"}`);
+      return { ...base, liveDataUsed: false, limitations, status: "ANSWERED", data: followUpData(operational, null),
+        answer: `${followUp.kind === "DIRECTIONS" ? "Here are directions for the top results" : "Here are the listed phone numbers for the top results"} from earlier:\n\n${lines.join("\n")}\n\nSay a number, for example “the second one”, for full details.` };
+    }
+    const facility = facilities[requested];
+    const intro = followUp.kind === "CONTACT"
+      ? facility.phone ? `The listed phone number for **${facility.name}** is ${facility.phone}.` : `No phone number is listed for **${facility.name}**. Its address and directions are below.`
+      : followUp.kind === "DIRECTIONS" ? `Here’s how to reach **${facility.name}**.` : "Here it is again:";
+    return { ...base, liveDataUsed: false, limitations, status: "ANSWERED", data: followUpData(operational, requested),
+      answer: `${intro}\n\n${describeFacility(facility, { withDirectionsUrl: !operational.renderable })}${stockNote(facility)}` };
+  }
+
+  // CLOSER: re-run the same search from the same point and rank purely by straight-line distance.
+  const category = operational.category ?? "all";
+  if (operational.center) {
+    const result = await searchDiscoveredFacilities({ latitude: operational.center.latitude, longitude: operational.center.longitude, category, radiusKm: 5 }).catch(() => null);
+    if (!result || (!result.facilities.length && result.unavailableReason && result.unavailableReason !== "NOT_CONFIGURED")) {
+      return { ...base, liveDataUsed: false, limitations, status: "UNAVAILABLE",
+        answer: "I couldn’t run a closer search just now because the facility provider didn’t respond. That doesn’t mean nothing is nearby; please retry shortly or use the map." };
+    }
+    const sorted = [...result.facilities].sort((a, b) => (a.distanceKm ?? Infinity) - (b.distanceKm ?? Infinity));
+    if (!sorted.length) {
+      const nearest = [...facilities].filter((facility) => facility.distanceKm !== null).sort((a, b) => a.distanceKm! - b.distanceKm!)[0];
+      return { ...base, liveDataUsed: false, limitations, status: "NO_RESULTS",
+        answer: `I couldn’t find a listed ${CATEGORY_LABEL[category]} within 5 km in a straight line of the same search point.${nearest ? ` The nearest from the earlier list is **${nearest.name}**, about ${nearest.distanceKm} km away.` : ""}` };
+    }
+    return {
+      ...base, liveDataUsed: sorted.some((facility) => facility.source === "LIFELINK"), limitations: ["Distances are straight-line from the same search point. Confirm services directly before travelling."], status: "ANSWERED",
+      answer: `Sorted by straight-line distance from the same search point, the closest ${CATEGORY_LABEL[category]} options within 5 km are:\n\n${sorted.slice(0, 3).map((facility, index) => `${index + 1}. **${facility.name}** — ${facility.distanceKm ?? "?"} km`).join("\n")}\n\nThe full list and map are below.`,
+      data: { facilities: sorted, center: result.center ?? operational.center, facilityProvider: result.provider, facilityCategory: category, ...(result.unavailableReason ? { providerUnavailableReason: result.unavailableReason } : {}), attribution: "© OpenStreetMap contributors" },
+    };
+  }
+  const ranked = facilities.filter((facility) => facility.distanceKm !== null).sort((a, b) => a.distanceKm! - b.distanceKm!);
+  if (!ranked.length) {
+    return { ...base, liveDataUsed: false, limitations, status: "NEEDS_INPUT",
+      answer: "The earlier results didn’t include distances, so I can’t rank them by how close they are. Share your locality or use your current location and I’ll search nearby." };
+  }
+  return { ...base, liveDataUsed: false, limitations, status: "ANSWERED",
+    answer: `From the earlier results, sorted by straight-line distance:\n\n${ranked.slice(0, 3).map((facility) => `${facility.index + 1}. **${facility.name}** — ${facility.distanceKm} km`).join("\n")}` };
+}
+
+function summarizeDiscovery(facilities: Array<{ source: string; distanceKm: number | null; name: string }>, category: FacilityCategory, area: string | null, reusedArea: boolean): string {
+  const registered = facilities.filter((facility) => facility.source === "LIFELINK").length;
+  const listed = facilities.length - registered;
+  const place = area ? area.replace(/,\s*India$/i, "").split(",").slice(0, 2).join(",").trim() : null;
+  const nearest = facilities.filter((facility) => facility.distanceKm !== null).sort((a, b) => a.distanceKm! - b.distanceKm!)[0];
+  return [
+    `I found ${facilities.length} ${CATEGORY_LABEL[category]} ${facilities.length === 1 ? "option" : "options"}${place ? ` near ${place}` : ""}${reusedArea ? " (the area from earlier in this chat; name another place to search elsewhere)" : ""}.`,
+    [registered ? `${registered} ${registered === 1 ? "is" : "are"} registered with LifeLink` : "", listed ? `${listed} ${listed === 1 ? "is a public map listing" : "are public map listings"} not verified by LifeLink` : ""].filter(Boolean).join(" and ") + ".",
+    nearest ? `The nearest is **${nearest.name}**, about ${nearest.distanceKm} km away in a straight line.` : "",
+    "Call to confirm services and hours before you travel.",
+  ].filter(Boolean).join(" ");
+}
+
+function liveStatus(live:{ status?: AssistantResultStatus; needsClarification?: boolean; liveDataUsed: boolean; data?: Record<string, unknown> }): AssistantResultStatus {
+  if (live.status) return live.status;
+  if (live.needsClarification) return "NEEDS_INPUT";
+  if (!live.liveDataUsed) return "UNAVAILABLE";
+  return live.data?.resultCount === 0 ? "NO_RESULTS" : "ANSWERED";
+}
+
+async function answerFromLiveData(message: string, actor: AuthContext, history: ConversationTurn[], intent: QueryIntent, plan: RoutePlan, operational: OperationalContext | null): Promise<AssistantAnswer> {
+  const facilitySearch = intent === "FACILITY_DISCOVERY";
+  const messageLocation = facilitySearch ? extractLocationQuery(message) : null;
+  const directory = facilitySearch && isInstitutionDirectoryRequest(message);
+  // A new facility type keeps the area the user already gave (stated in the answer), never the old category.
+  const carriedLocation = facilitySearch && !messageLocation && !directory
+    ? extractLocationQuery(history.filter((turn) => turn.role === "user").slice(-3).map((turn) => turn.content).join(" ")) : null;
+  const carriedCenter = facilitySearch && !messageLocation && !carriedLocation && !directory ? operational?.center ?? null : null;
+  const location = messageLocation ?? carriedLocation;
+  const live = await fetchLiveContext(carriedLocation ? `${message} near ${carriedLocation}` : message, actor, intent, { center: carriedCenter });
+  if (!live) {
+    // A live-data intent must never silently fall back to stale indexed text.
+    return {
+      answer: "I couldn't confirm that from LifeLink's live records right now. Please use the linked LifeLink workflow and retry shortly.",
+      intent, knowledgeUsed: false, liveDataUsed: false, sources: [], status: "UNAVAILABLE",
+      limitations: ["No live operational record was confirmed; indexed documents were not used as a substitute."],
+    };
+  }
+  const category: FacilityCategory = plan.facilityCategory ?? inferFacilityCategory(message) ?? "all";
+  const discovery = facilitySearch && !directory && (location || carriedCenter)
+    ? await searchDiscoveredFacilities(carriedCenter
+      ? { latitude: carriedCenter.latitude, longitude: carriedCenter.longitude, category, radiusKm: 25 }
+      : { location: location!, category, radiusKm: 25 }).catch(() => null)
+    : null;
+  // When places are shown as cards and on the map, the text is a short summary rather than a second copy of the list.
+  const answer = discovery?.facilities.length ? summarizeDiscovery(discovery.facilities, category, discovery.center?.displayName ?? location ?? carriedCenter?.displayName ?? null, Boolean(carriedLocation || carriedCenter))
+    : live.answer;
+  const status = discovery?.facilities.length ? "ANSWERED" : liveStatus(live);
+  return {
+    answer,
+    intent: live.intent,
+    knowledgeUsed: false,
+    liveDataUsed: live.liveDataUsed,
+    sources: [],
+    limitations: live.liveDataUsed
+      ? ["The result reflects records returned by LifeLink at query time. Availability and status can change; confirm with the responsible institution. This is not a clinical or allocation decision."]
+      : ["No live result was confirmed. The assistant has not substituted retrieved documents or generated text for operational records."],
+    handoff: live.handoff,
+    status,
+    data: {
+      ...(live.data ?? {}),
+      ...(facilitySearch ? { facilityCategory: category } : {}),
+      ...(discovery ? { facilities: discovery.facilities, center: discovery.center, searchedLocation: location ?? carriedCenter?.displayName ?? null, facilityProvider: discovery.provider, ...(discovery.unavailableReason ? { providerUnavailableReason: discovery.unavailableReason } : {}), attribution: "© OpenStreetMap contributors" } : {}),
+    },
+  };
+}
+
+async function answerFromKnowledge(message: string, actor: AuthContext, history: ConversationTurn[], intent: QueryIntent, generationMessage = message): Promise<AssistantAnswer> {
+  let chunks: RetrievedKnowledgeChunk[];
+  try {
+    chunks = await retrieveRelevantChunks(buildRetrievalQuery(message, history), toRagRole(actor.role));
+  } catch (error) {
+    console.error("LifeLink assistant retrieval failed", error instanceof Error ? error.name : "UnknownError");
+    return {
+      answer: "I couldn’t reach LifeLink’s knowledge base just now, so I can’t give you a sourced answer. Please try again in a moment.",
+      intent, knowledgeUsed: false, liveDataUsed: false, sources: [], status: "UNAVAILABLE",
+      limitations: ["The knowledge service was unavailable. No unsourced answer was generated."],
+    };
+  }
+  const sources = buildSourceReferences(chunks);
+
+  if (!chunks.length) {
+    return {
+      answer: `${getNoEvidenceAnswer()} External web search is not configured, so I can't verify this from an outside source.`,
+      intent: "UNKNOWN",
+      knowledgeUsed: false,
+      liveDataUsed: false,
+      sources: [],
+      limitations: ["No sufficiently relevant approved knowledge passages were retrieved."],
+      status: "NO_RESULTS",
+    };
+  }
+
+  const prompt = assembleGroundedContext(generationMessage, actor, history, chunks);
+  let answer: string;
+  try {
+    answer = postProcessAssistantResponse(
+      await generateGroundedText(LIFELINK_RAG_SYSTEM_INSTRUCTION, prompt),
+    );
+  } catch (error) {
+    console.error("LifeLink assistant generation failed", error instanceof Error ? error.name : "UnknownError");
+    return {
+      answer: "I found related LifeLink documentation, but the answer service is temporarily unavailable. Please retry shortly. The source documents are listed below so you can still review the documented information.",
+      intent,
+      knowledgeUsed: true,
+      liveDataUsed: false,
+      sources,
+      limitations: ["Generation was unavailable. No unsupported answer was generated."],
+      status: "UNAVAILABLE",
+    };
+  }
+
+  return {
+    answer: chunks.some((chunk) => chunk.sourceKey === "lifelink-sample-data")
+      ? `Synthetic test data (fictional records, not current operational information): ${answer}`
+      : answer,
+    intent,
+    knowledgeUsed: true,
+    liveDataUsed: false,
+    sources,
+    limitations: ["This response is grounded in approved documentation, not live inventory or request data."],
+    status: "ANSWERED",
+  };
+}
+
+/** "Explain blood donation and find a nearby blood bank": retrieval and facility search run side by side. */
+async function answerHybrid(message: string, actor: AuthContext, history: ConversationTurn[], plan: RoutePlan, operational: OperationalContext | null): Promise<AssistantAnswer> {
+  const knowledgePart = plan.knowledgeQuery ?? message;
+  const facilityPart = plan.facilityQuery ?? message;
+  const location = extractLocationQuery(message);
+  const typeHint = inferFacilityCategory(facilityPart) ? "" : plan.facilityCategory === "organ" ? " for organ services" : plan.facilityCategory === "blood" ? " for blood services" : "";
+  const facilityQuery = `${facilityPart}${typeHint}${location && !extractLocationQuery(facilityPart) ? ` near ${location}` : ""}`;
+  const generationMessage = `${knowledgePart}\n\n(Answer only this informational part. LifeLink's facility search is handling "${facilityPart}" separately, so do not list, name, or invent facilities.)`;
+  const [knowledge, facility] = await Promise.all([
+    answerFromKnowledge(message, actor, history, "KNOWLEDGE", generationMessage),
+    answerFromLiveData(facilityQuery, actor, [], "FACILITY_DISCOVERY", plan, operational),
+  ]);
+  const status: AssistantResultStatus = knowledge.status === "UNAVAILABLE" && facility.status === "UNAVAILABLE" ? "UNAVAILABLE"
+    : facility.status === "NEEDS_INPUT" ? "NEEDS_INPUT" : "ANSWERED";
+  return {
+    answer: `${knowledge.answer}\n\n**Finding a ${CATEGORY_LABEL[plan.facilityCategory ?? "all"]}:** ${facility.answer}`,
+    intent: "FACILITY_DISCOVERY",
+    knowledgeUsed: knowledge.knowledgeUsed,
+    liveDataUsed: facility.liveDataUsed,
+    sources: knowledge.sources,
+    limitations: [...new Set([...knowledge.limitations, ...facility.limitations])],
+    ...(facility.handoff ? { handoff: facility.handoff } : {}),
+    data: { ...(facility.data ?? {}), hybrid: true },
+    status,
+  };
+}
+
+function suggestFollowUps(answer: AssistantAnswer, message: string): string[] {
+  if (answer.intent === "EMERGENCY" || answer.status === "UNAVAILABLE") return [];
+  const facilities = Array.isArray(answer.data?.facilities) ? answer.data.facilities.length : 0;
+  if (facilities > 1) {
+    return answer.data?.center
+      ? ["Which one is closest?", "Show me more options", "What is the contact number of the first one?"]
+      : ["Show me the first one again", "What is the contact number of the first one?"];
+  }
+  if (facilities === 1) return ["What about its contact number?", "How do I get there?"];
+  const topic = `${message} ${answer.answer}`.slice(0, 1500);
+  switch (answer.intent) {
+    case "LIVE_INVENTORY":
+      return answer.data?.summary ? ["Is O-positive blood available?", "Find a nearby blood bank"] : ["Find a nearby blood bank", "How does the blood request workflow work?"];
+    case "REQUEST_STATUS":
+      return ["How does the blood request workflow work?"];
+    case "MEDICAL_OR_CLINICAL":
+      return ["I think I need to see a doctor"];
+    case "FIRST_AID":
+      return ["Where is the nearest pharmacy?", "I think I need to see a doctor"];
+    case "KNOWLEDGE":
+      if (/\borgan|transplant\b/i.test(topic)) return ["Which organ centres are registered on LifeLink?", "Can you explain that more simply?"];
+      if (/\bblood\b/i.test(topic)) return ["Find a nearby blood bank", "Is O-positive blood available?"];
+      return ["Can you explain that more simply?"];
+    default:
+      return [];
+  }
+}
+
+/** The presentation the client should use, decided from what the answer actually contains. */
+export function chooseDisplay(answer: AssistantAnswer): AssistantDisplay {
+  if (answer.intent === "EMERGENCY") return "emergency";
+  if (answer.status === "UNAVAILABLE") return "unavailable";
+  if (Array.isArray(answer.data?.facilities)) return "facilities";
+  if (Array.isArray(answer.data?.candidates) || Array.isArray(answer.data?.summary)) return "inventory";
+  if (answer.status === "NEEDS_INPUT") return "clarification";
+  if (answer.intent === "REQUEST_STATUS") return "record";
+  if (answer.sources.length || answer.knowledgeUsed) return "knowledge";
+  return "conversation";
+}
+
+function finalizeAnswer(answer: AssistantAnswer, plan: RoutePlan, message: string): AssistantAnswer {
+  const status = answer.status ?? "ANSWERED";
+  const withStatus = { ...answer, status };
+  return {
+    ...withStatus,
+    display: answer.display ?? chooseDisplay(withStatus),
+    suggestions: answer.suggestions ?? suggestFollowUps(withStatus, message),
+    route: toRouteSummary(plan, { intent: answer.intent, needsClarification: plan.needsClarification || status === "NEEDS_INPUT" }),
+  };
+}
+
 export async function generateAssistantResponse(input: {
   message: string;
   actor: AuthContext;
   history: ConversationTurn[];
+  /** Structured results from earlier answers in this conversation (facility lists, search centre). */
+  operational?: OperationalContext | null;
 }): Promise<AssistantAnswer> {
-  const { message, actor, history } = input;
-  const fallbackIntent = detectQueryIntent(message);
-  if (detectEmergencySeverity(message, history)) return deterministicEmergencyAnswer();
+  const plan = planAssistantRoute(input.message, input.history, input.operational ?? null);
+  const answer = await respond(input.message, input.actor, input.history, input.operational ?? null, plan);
+  return finalizeAnswer(answer, plan, input.message);
+}
+
+async function respond(message: string, actor: AuthContext, history: ConversationTurn[], operational: OperationalContext | null, plan: RoutePlan): Promise<AssistantAnswer> {
+  // Safety first: deterministic, synchronous, and independent of the database, providers, and the model.
+  if (plan.emergency) return buildEmergencyAnswer(plan.emergency);
+  if (plan.followUp?.kind === "NO_CONTEXT") return noPreviousListAnswer();
+  if (plan.followUp && operational) return answerFacilityFollowUp(plan.followUp, operational, message);
+  if (isCapabilityQuestion(message)) return capabilityAnswer();
+  const fallbackIntent = plan.hybrid ? "KNOWLEDGE" : plan.intent;
   if (needsPromptInjuryAssessment(message) && describesInjuryNeedingFirstAid(message)) return {
     answer: "Please get prompt medical assessment today; being unable to bear weight, severe or rapidly increasing swelling, or severe pain after an injury can need examination. Rest and protect the area, avoid putting weight on it, and use a cold pack wrapped in cloth for short intervals. Seek emergency help now for a severe deformity, numbness, a cold or blue limb, heavy bleeding, or any breathing or consciousness problem.",
     intent: "FIRST_AID", knowledgeUsed: false, liveDataUsed: false, sources: [],
@@ -191,6 +554,7 @@ export async function generateAssistantResponse(input: {
   const firstAidScenario = describesInjuryNeedingFirstAid(message) ||
     (history.slice(-4).some((turn) => turn.role === "user" && describesInjuryNeedingFirstAid(turn.content)) &&
       /\b(?:it|the wound|the cut|the burn|the injury|now it)\b/i.test(message));
+  if (plan.hybrid && !urgentBlood && !urgentOrgan && !firstAidScenario) return answerHybrid(message, actor, history, plan, operational);
   let intent: QueryIntent = urgentBlood ? "LIVE_INVENTORY" : urgentOrgan ? "FACILITY_DISCOVERY" : firstAidScenario ? "FIRST_AID" : fallbackIntent;
   // Emergencies, explicit clinical/safety questions, and requested mutations take
   // the deterministic safe route immediately; avoid waiting on classification.
@@ -205,6 +569,10 @@ export async function generateAssistantResponse(input: {
   // Keep deterministic safeguards authoritative if model classification disagrees.
   if (!urgentOrgan && !firstAidScenario && (fallbackIntent === "MEDICAL_OR_CLINICAL" || fallbackIntent === "WORKFLOW_ACTION" || fallbackIntent === "REQUEST_STATUS" || LIVE_INTENTS.includes(fallbackIntent))) intent = fallbackIntent;
   if (intent === "EMERGENCY") intent = fallbackIntent;
+  // An explanatory question ("What does a doctor do?") is never upgraded to a live lookup or an action by the model.
+  if (!LIVE_INTENTS.includes(fallbackIntent) && fallbackIntent !== "WORKFLOW_ACTION" &&
+      /^(?:what (?:does|do|is|are)|how (?:does|do|is|are)|why|explain|tell me about)\b/i.test(message.trim()) &&
+      (LIVE_INTENTS.includes(intent) || intent === "WORKFLOW_ACTION")) intent = fallbackIntent;
   const role = toRagRole(actor.role);
 
   if (intent === "GENERAL_CONVERSATION" || intent === "GREETING") {
@@ -219,8 +587,11 @@ export async function generateAssistantResponse(input: {
     const conversationalPrompt = JSON.stringify({ history: history.slice(-8), message });
     let answer = intent === "GREETING" ? "Hi! I'm here to help. What would you like to talk about?" : "I couldn't generate a response just now. Please try again.";
     try { answer = postProcessAssistantResponse(await generateGroundedText(conversationalSystem, conversationalPrompt)); }
-    catch { /* Keep a safe retry message if Gemini is unavailable. */ }
-    return { answer, intent, knowledgeUsed: false, liveDataUsed: false, sources: [], limitations: [] };
+    catch {
+      // Keep a safe retry message if Gemini is unavailable; a greeting still gets a usable reply.
+      return { answer, intent, knowledgeUsed: false, liveDataUsed: false, sources: [], limitations: [], status: intent === "GREETING" ? "ANSWERED" : "UNAVAILABLE" };
+    }
+    return { answer, intent, knowledgeUsed: false, liveDataUsed: false, sources: [], limitations: [], status: "ANSWERED" };
   }
 
   if (intent === "OUT_OF_SCOPE") return {
@@ -230,11 +601,11 @@ export async function generateAssistantResponse(input: {
 
   if (intent === "AMBIGUOUS" || intent === "UNKNOWN") return {
     answer: "Could you clarify what you mean? I can help with general questions, healthcare information, or LifeLink services.",
-    intent: "AMBIGUOUS", knowledgeUsed: false, liveDataUsed: false, sources: [], limitations: [],
+    intent: "AMBIGUOUS", knowledgeUsed: false, liveDataUsed: false, sources: [], limitations: [], status: "NEEDS_INPUT",
   };
 
   if (intent === "FIRST_AID") {
-    if (hasFirstAidEmergencyWarning(message) || /\b(?:can't breathe|cannot breathe|unconscious|severe bleeding|overdose)\b/i.test(message)) return deterministicEmergencyAnswer();
+    if (hasFirstAidEmergencyWarning(message) || /\b(?:can't breathe|cannot breathe|unconscious|severe bleeding|overdose)\b/i.test(message)) return buildEmergencyAnswer(assessEmergency(message, history) ?? undefined);
     const retrieved = await retrieveRelevantChunks(buildRetrievalQuery(message, history), role).catch(() => [] as RetrievedKnowledgeChunk[]);
     const chunks = retrieved.filter((chunk) => chunk.sourceKey === "medical-encyclopedia");
     const sources = buildSourceReferences(chunks);
@@ -254,7 +625,7 @@ export async function generateAssistantResponse(input: {
     } catch {
       return {
         answer: "I can share basic first-aid guidance, but the answer service is temporarily unavailable. If bleeding is heavy or will not stop, or there is trouble breathing, loss of consciousness, severe pain, or a serious burn, contact emergency services. Otherwise, describe the injury and how it happened, or try again shortly.",
-        intent, knowledgeUsed: false, liveDataUsed: false, sources: [],
+        intent, knowledgeUsed: false, liveDataUsed: false, sources: [], status: "UNAVAILABLE",
         limitations: ["No generated first-aid guidance was provided."],
       };
     }
@@ -267,11 +638,20 @@ export async function generateAssistantResponse(input: {
       intent, knowledgeUsed: false, liveDataUsed: false, sources: [],
       limitations: ["This assistant cannot assess or treat emergencies or provide personalized medical decisions."],
     };
-    const medicalChunks = (await retrieveRelevantChunks(buildRetrievalQuery(message, history), role))
-      .filter((chunk) => chunk.sourceKey === "medical-encyclopedia");
+    let medicalChunks: RetrievedKnowledgeChunk[];
+    try {
+      medicalChunks = (await retrieveRelevantChunks(buildRetrievalQuery(message, history), role))
+        .filter((chunk) => chunk.sourceKey === "medical-encyclopedia");
+    } catch {
+      return {
+        answer: "I couldn’t reach the medical reference just now, so I can’t give you a sourced answer. Please try again shortly, or consult a qualified healthcare professional.",
+        intent, knowledgeUsed: false, liveDataUsed: false, sources: [], status: "UNAVAILABLE",
+        limitations: ["The knowledge service was unavailable. No unsourced medical answer was generated."],
+      };
+    }
     if (!medicalChunks.length) return {
       answer: "I couldn't find a relevant passage in the approved medical encyclopedia, and external web search isn't configured for this assistant. Please consult a qualified healthcare professional for medical guidance.",
-      intent, knowledgeUsed: false, liveDataUsed: false, sources: [],
+      intent, knowledgeUsed: false, liveDataUsed: false, sources: [], status: "NO_RESULTS",
       limitations: ["No relevant medical passage was retrieved. This assistant does not diagnose, prescribe, determine donor eligibility, decide transfusion compatibility, or make organ-allocation decisions."],
     };
     const sources = buildSourceReferences(medicalChunks);
@@ -288,7 +668,7 @@ export async function generateAssistantResponse(input: {
     } catch {
       return {
         answer: "I found a relevant passage in the medical encyclopedia, but the answer service is temporarily unavailable. Please retry or consult a qualified healthcare professional.",
-        intent, knowledgeUsed: true, liveDataUsed: false, sources,
+        intent, knowledgeUsed: true, liveDataUsed: false, sources, status: "UNAVAILABLE",
         limitations: ["No generated medical answer was provided."],
       };
     }
@@ -320,7 +700,7 @@ export async function generateAssistantResponse(input: {
       sources: [],
       limitations: ["Inventory records are not a fulfilment guarantee. Follow the treating team’s instructions; this assistant does not make clinical decisions.", ...(urgent ? [] : ["LifeLink live inventory could not be checked."])],
       handoff: urgent?.handoff ?? { label: "Open Facility Map", href: "/map", reason: "Review nearby facilities and contact the treating team. This assistant has not created a request." },
-      ...(discovery ? { data: { facilities: discovery.facilities, center: discovery.center, searchedLocation: details.location, bloodGroup: details.bloodGroup ?? null, component: details.component ?? null, facilityProvider: discovery.provider, ...(discovery.unavailableReason ? { providerUnavailableReason: discovery.unavailableReason } : {}), attribution: "© OpenStreetMap contributors" } } : {}),
+      ...(discovery ? { data: { facilityCategory: "blood", facilities: discovery.facilities, center: discovery.center, searchedLocation: details.location, bloodGroup: details.bloodGroup ?? null, component: details.component ?? null, facilityProvider: discovery.provider, ...(discovery.unavailableReason ? { providerUnavailableReason: discovery.unavailableReason } : {}), attribution: "© OpenStreetMap contributors" } } : {}),
     };
   }
 
@@ -343,7 +723,7 @@ export async function generateAssistantResponse(input: {
       sources: [],
       limitations: ["No donor match, clinical suitability, consent, or organ allocation was determined by this assistant."],
       handoff: handoffForAction(userContext, actor),
-      ...(discovery ? { data: { facilities: discovery.facilities, center: discovery.center, searchedLocation: extractLocationQuery(userContext), facilityProvider: discovery.provider, ...(discovery.unavailableReason ? { providerUnavailableReason: discovery.unavailableReason } : {}), attribution: "© OpenStreetMap contributors" } } : {}),
+      ...(discovery ? { data: { facilityCategory: "organ", facilities: discovery.facilities, center: discovery.center, searchedLocation: extractLocationQuery(userContext), facilityProvider: discovery.provider, ...(discovery.unavailableReason ? { providerUnavailableReason: discovery.unavailableReason } : {}), attribution: "© OpenStreetMap contributors" } } : {}),
     };
   }
 
@@ -360,90 +740,8 @@ export async function generateAssistantResponse(input: {
     };
   }
 
-  if (LIVE_INTENTS.includes(intent)) {
-    const live = await fetchLiveContext(message, actor, intent);
-    if (live) {
-      const location = intent === "FACILITY_DISCOVERY" ? extractLocationQuery(message) ?? extractLocationQuery(history.filter((turn) => turn.role === "user").slice(-3).map((turn) => turn.content).join(" ")) : null;
-      const category: FacilityCategory = /\b(blood|blood bank|blood centre|blood center)\b/i.test(message) ? "blood"
-        : /\b(organ|transplant)\b/i.test(message) ? "organ"
-          : /\b(emergency|emergency department|trauma)\b/i.test(message) ? "emergency"
-            : /\b(pharmacy|chemist|medical store)\b/i.test(message) ? "pharmacy"
-            : /\bclinic\b/i.test(message) ? "clinic"
-              : /\bdoctor\b/i.test(message) ? "care"
-                : /\b(hospital)\b/i.test(message) ? "hospital" : "all";
-      const discovery = intent === "FACILITY_DISCOVERY" && location
-        ? await searchDiscoveredFacilities({ location, category, radiusKm: 25 }).catch(() => null)
-        : null;
-      const answer = live.answer + (discovery?.facilities.some((facility) => facility.source === "OPENSTREETMAP")
-        ? "\n\nPublicly listed nearby options are shown below as external listings, not LifeLink-registered facilities. Contact them to confirm services before travelling."
-        : "");
-      return {
-        answer,
-        intent: live.intent,
-        knowledgeUsed: false,
-        liveDataUsed: live.liveDataUsed,
-        sources: [],
-        limitations: live.liveDataUsed
-          ? ["The result reflects records returned by LifeLink at query time. Availability and status can change; confirm with the responsible institution. This is not a clinical or allocation decision."]
-          : ["No live result was confirmed. The assistant has not substituted retrieved documents or generated text for operational records."],
-        handoff: live.handoff,
-        ...(discovery ? { data: { ...(live.data ?? {}), facilities: discovery.facilities, center: discovery.center, searchedLocation: location, facilityProvider: discovery.provider, ...(discovery.unavailableReason ? { providerUnavailableReason: discovery.unavailableReason } : {}), attribution: "© OpenStreetMap contributors" } } : {}),
-      };
-    }
-    // A live-data intent must never silently fall back to stale indexed text.
-    return {
-      answer: "I couldn't confirm that from LifeLink's live records right now. Please use the linked LifeLink workflow and retry shortly.",
-      intent,
-      knowledgeUsed: false,
-      liveDataUsed: false,
-      sources: [],
-      limitations: ["No live operational record was confirmed; indexed documents were not used as a substitute."],
-    };
-  }
-
-  const retrievalQuery = buildRetrievalQuery(message, history);
-  const chunks = await retrieveRelevantChunks(retrievalQuery, role);
-  const sources = buildSourceReferences(chunks);
-
-  if (!chunks.length) {
-    return {
-      answer: `${getNoEvidenceAnswer()} External web search is not configured, so I can't verify this from an outside source.`,
-      intent: "UNKNOWN",
-      knowledgeUsed: false,
-      liveDataUsed: false,
-      sources: [],
-      limitations: ["No sufficiently relevant approved knowledge passages were retrieved."],
-    };
-  }
-
-  const prompt = assembleGroundedContext(message, actor, history, chunks);
-  let answer: string;
-  try {
-    answer = postProcessAssistantResponse(
-      await generateGroundedText(LIFELINK_RAG_SYSTEM_INSTRUCTION, prompt),
-    );
-  } catch (error) {
-    console.error("LifeLink assistant generation failed", error instanceof Error ? error.name : "UnknownError");
-    return {
-      answer: "I found related LifeLink documentation, but the answer service is temporarily unavailable. Please retry shortly. The source documents are listed below so you can still review the documented information.",
-      intent,
-      knowledgeUsed: true,
-      liveDataUsed: false,
-      sources,
-      limitations: ["Generation was unavailable. No unsupported answer was generated."],
-    };
-  }
-
-  return {
-    answer: chunks.some((chunk) => chunk.sourceKey === "lifelink-sample-data")
-      ? `Synthetic test data (fictional records, not current operational information): ${answer}`
-      : answer,
-    intent,
-    knowledgeUsed: true,
-    liveDataUsed: false,
-    sources,
-    limitations: ["This response is grounded in approved documentation, not live inventory or request data."],
-  };
+  if (LIVE_INTENTS.includes(intent)) return answerFromLiveData(message, actor, history, intent, plan, operational);
+  return answerFromKnowledge(message, actor, history, intent);
 }
 
 export async function listVisibleKnowledgeSources(actor: AuthContext) {

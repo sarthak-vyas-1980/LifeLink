@@ -91,4 +91,28 @@ export interface AssistantAnswer {
     href: string;
     reason: string;
   };
+  /** Outcome of the capability that answered, so clients can tell "no results" from "service unavailable". */
+  status?: AssistantResultStatus;
+  /** Short follow-up prompts the user can send next; never claims of completed actions. */
+  suggestions?: string[];
+  /** The validated deterministic route decision, for transparency and auditing. */
+  route?: AssistantRouteSummary;
+  /** How the client should present this answer; the structured content itself is in `data` and `sources`. */
+  display?: AssistantDisplay;
+}
+
+export type AssistantDisplay = "conversation" | "knowledge" | "facilities" | "inventory" | "record" | "emergency" | "clarification" | "unavailable";
+
+export type AssistantResultStatus = "ANSWERED" | "NO_RESULTS" | "NEEDS_INPUT" | "UNAVAILABLE" | "NOT_PERMITTED";
+
+export interface AssistantRouteSummary {
+  intent: QueryIntent;
+  urgency: "CRITICAL" | "URGENT" | "ROUTINE";
+  needsRag: boolean;
+  needsLiveData: boolean;
+  needsFacility: boolean;
+  needsClarification: boolean;
+  hybrid: boolean;
+  facilityCategory: string | null;
+  followUp: string | null;
 }

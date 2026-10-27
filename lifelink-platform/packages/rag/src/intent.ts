@@ -74,20 +74,57 @@ export async function understandQueryIntent(
 
 const HOW_QUESTION = /\b(how\s+(do|can|does|to)|what\s+(happens|does|is)|explain|walk\s+me\s+through|steps\s+to|difference\s+between|meaning\s+of|policy|rules|process|workflow|guide)\b/i;
 const UUID = /\b[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b/i;
+const CARE_PLACE = "(?:doctor|physician|gp|clinic|hospital)";
+const CARE_SEEKING = [
+  new RegExp(`\\b(?:i (?:think|feel|might|may|probably) (?:need|should|have) (?:to )?(?:see|visit|talk to|consult|go to) (?:a|the) ${CARE_PLACE}|i need (?:to (?:see|visit|go to) )?(?:a|the) ${CARE_PLACE}|i (?:should|must|have to) (?:see|visit|go to) (?:a|the) ${CARE_PLACE}|should i (?:see|visit|go to) (?:a|the) ${CARE_PLACE}|i need (?:medical )?(?:care|assessment)|i need medical (?:help|attention)|i want to (?:see|visit) (?:a|the) ${CARE_PLACE})\\b`, "i"),
+  /\b(?:help me find|find me|i'?m looking for|looking for|where (?:can|do|should) i (?:get|find|see|go for|go to)|(?:can|could) you (?:suggest|recommend|find)|suggest|recommend)\b[\s\S]{0,30}\b(?:medical (?:care|help|attention)|doctors?|clinics?|hospitals?|physicians?|healthcare|health care|(?:a )?check-?up|gp)\b/i,
+  /\bwhere can i (?:get|go to get) (?:myself )?(?:checked|examined|seen|tested|treated|a check-?up)\b/i,
+];
+const BLOOD_GROUP_TOKEN = /(?:^|[\s(,])(?:ab|a|b|o)\s*(?:\+|-|−|\+ve|-ve)(?=$|[\s?.,!)])|\b(?:ab|a|b|o)[\s-](?:positive|negative|pos|neg)\b/i;
+
+/** A person asking to be pointed to care ("I need a doctor", "Where can I get checked?"), not asking what care is. */
+export function isCareSeekingRequest(value: string): boolean {
+  return CARE_SEEKING.some((pattern) => pattern.test(value));
+}
+
+export function mentionsBloodGroup(value: string): boolean {
+  return BLOOD_GROUP_TOKEN.test(value);
+}
+
+/** "What can you help me with?" is answered from the assistant's real capabilities, without retrieval. */
+export function isCapabilityQuestion(value: string): boolean {
+  return /^(?:so,?\s*|ok(?:ay)?,?\s*)?(?:what (?:can|could) you (?:help (?:me )?with|do(?: for me)?)|what do you do|how can you help(?: me)?|who are you|what are you|what are your (?:features|capabilities))[?.!\s]*$/i.test(value.trim());
+}
+
+/** A request to restate the previous answer, which needs the conversation rather than new retrieval. */
+export function isRephraseRequest(value: string): boolean {
+  return /^(?:can you |could you |please )?(?:explain|say|put|describe) (?:that|it|this)(?: again)?(?: (?:more )?(?:simply|simpler|in simpler (?:terms|words)|differently|in short|briefly|in more detail|in detail))?[?.!\s]*$|^(?:can you |could you |please )?(?:simplify|rephrase|summari[sz]e|shorten) (?:that|it|this)[?.!\s]*$|^(?:what do you mean|i (?:don't|do not|didn't) understand)[?.!\s]*$|^(?:can you |could you |please )?(?:explain|describe|say) (?:the|that|this) [\w\s-]{1,40}? ?(?:in simpler (?:terms|words)|more simply|simply|in plain (?:language|english|words))[?.!\s]*$/i.test(value.trim());
+}
+
+/** Directory questions about institutions registered on LifeLink, as opposed to how registration works. */
+export function isInstitutionDirectoryRequest(value: string): boolean {
+  const facility = "(?:institutions?|hospitals?|blood banks?|blood cent(?:re|er)s?|organ cent(?:re|er)s?|transplant cent(?:re|er)s?|cent(?:re|er)s|facilities)";
+  const directory = new RegExp(`\\b(?:registered|participating|partner|enrolled|listed)\\b[\\s\\S]{0,40}\\b${facility}\\b|\\b${facility}\\b[\\s\\S]{0,40}\\b(?:registered|on lifelink|in lifelink|part of lifelink|(?:use|using) lifelink|participating)\\b`, "i");
+  return directory.test(value) && /\b(?:which|what|list|show|all|any|how many|tell me)\b/i.test(value) &&
+    !/\bhow (?:do|does|can|to|should)\b/i.test(value);
+}
 
 export function classifyQueryIntent(query: string): QueryIntent {
   const value = query.trim();
   if (!value) return "UNKNOWN";
 
   if (/^(?:hi|hello|hey|good morning|good afternoon|good evening|thanks|thank you|how are you)[.!\s]*$/i.test(value)) return "GREETING";
+  if (isCapabilityQuestion(value) || isRephraseRequest(value)) return "GENERAL_CONVERSATION";
 
   // A request for help finding a clinician is a facility lookup, even when it is
   // phrased as a tentative statement rather than an imperative search request.
   // Keep this ahead of medical education/diagnosis routing so it reaches the
   // authenticated facility tools and the assistant's location-aware UI.
-  if (/\b(?:i (?:think|feel|might|may|probably) need to (?:see|visit|talk to|consult) (?:a|the) (?:doctor|physician)|i need (?:to see )?(?:a|the) doctor|i should (?:see|visit) (?:a|the) doctor|should i (?:see|visit) (?:a|the) doctor|i need (?:medical )?(?:care|assessment)|i want to (?:see|visit) (?:a|the) doctor)\b/i.test(value)) {
-    return "FACILITY_DISCOVERY";
-  }
+  if (isCareSeekingRequest(value)) return "FACILITY_DISCOVERY";
+  // Switching facility type mid-conversation: "What about pharmacies instead?", "Actually, I need a pharmacy".
+  if (/\b(?:pharmac(?:y|ies)|chemists?|medical stores?|hospitals?|clinics?|doctors?|blood banks?|blood cent(?:re|er)s?|organ cent(?:re|er)s?)\b/i.test(value) &&
+      /\b(?:what about|how about|instead|actually|rather|i need (?:a|an|the|some)|i'?m looking for)\b/i.test(value) &&
+      !/\b(?:how (?:do|does|can|to)|explain|what is|what are|why)\b/i.test(value)) return "FACILITY_DISCOVERY";
 
   if (/\b(diagnos(?:e|is)|prescribe|dosage|treatment for my|am i eligible|can (?:i|someone|a person|they) donate|is this blood compatible|should i take|chest pain|can't breathe|cannot breathe|severe bleeding|unconscious|overdose)\b/i.test(value)) {
     return "MEDICAL_OR_CLINICAL";
@@ -113,6 +150,13 @@ export function classifyQueryIntent(query: string): QueryIntent {
   if (/\b(available now|currently available|current inventory|live inventory|stock right now|how many units|check inventory|blood stock|units in stock)\b/i.test(value)) {
     return "LIVE_INVENTORY";
   }
+  // "Is O-positive blood available?" asks for current records, not documentation.
+  if (/\b(?:available|availability|in stock|stock|inventory|any units|units? of)\b/i.test(value) &&
+      (mentionsBloodGroup(value) || /\bblood\b/i.test(value)) &&
+      !/\b(?:how (?:does|do|is|are|can|to)|explain|process|workflow|policy|why|update|add|edit|manage|record|can (?:a|an) |who can)\b/i.test(value)) {
+    return "LIVE_INVENTORY";
+  }
+  if (isInstitutionDirectoryRequest(value)) return "FACILITY_DISCOVERY";
 
   if (/\b(nearby|nearest|closest|find\s+(?:me\s+)?(?:a\s+)?(?:nearby\s+)?(?:hospital|clinic|doctor|pharmacy|medical store|blood bank|blood centre|blood center|organ centre|organ center|donation centre|donation center|camp)|upcoming blood donation camps?|address of a blood bank|list (?:the )?(?:nearby )?(?:blood banks|blood centres|blood centers|organ centres|organ centers|hospitals|clinics|pharmacies))\b/i.test(value)) {
     return "FACILITY_DISCOVERY";
@@ -146,8 +190,27 @@ export function isUrgentBloodRequest(message: string, history: Array<{ role: "us
   const lastAssistant = [...history].reverse().find((turn) => turn.role === "assistant")?.content ?? "";
   if (/nothing has been created by this chat/i.test(lastAssistant) &&
       !/\b(blood|unit|platelet|plasma|transfusion|request|limbodi|indore|locality|component)\b/i.test(message)) return false;
-  const userContext = [...history.filter((turn) => turn.role === "user").map((turn) => turn.content), message].join("\n");
-  const needsBlood = /\b(?:need|needs|needed|require|requires|looking for|urgently|immediately|right now|asap)\b[\s\S]{0,90}\b(?:blood|units?|transfusion)\b|\b(?:blood|transfusion)\b[\s\S]{0,70}\b(?:need|needs|needed|require|requires|immediately|urgently)\b/i.test(userContext);
-  const nearbyGroupSearch = /\b(?:which|find|list)\b[\s\S]{0,80}\bnearby\b[\s\S]{0,60}\bblood banks?\b[\s\S]{0,80}\b(?:required|matching)\s+blood group\b/i.test(userContext);
-  return needsBlood || nearbyGroupSearch;
+  const describesBloodNeed = (text: string) =>
+    /\b(?:need|needs|needed|require|requires|looking for|urgently|immediately|right now|asap)\b[\s\S]{0,90}\b(?:blood|units?|transfusion)\b|\b(?:blood|transfusion)\b[\s\S]{0,70}\b(?:need|needs|needed|require|requires|immediately|urgently)\b/i.test(text) ||
+    /\b(?:which|find|list)\b[\s\S]{0,80}\bnearby\b[\s\S]{0,60}\bblood banks?\b[\s\S]{0,80}\b(?:required|matching)\s+blood group\b/i.test(text);
+  if (describesBloodNeed(message)) return true;
+  // Earlier turns are checked one at a time (never concatenated, so "need" in one turn and "blood"
+  // in another cannot combine), and only when this turn just supplies a missing detail.
+  return isDetailReply(message) &&
+    history.filter((turn) => turn.role === "user").slice(-3).some((turn) => describesBloodNeed(turn.content));
+}
+
+/**
+ * A short answer that only supplies a detail for the workflow already in progress
+ * ("B+", "two units", "platelets", "near Limbodi, Indore"), not a new request or question.
+ */
+export function isDetailReply(message: string): boolean {
+  const value = message.trim();
+  if (!value || value.length > 80 || /\?\s*$/.test(value)) return false;
+  if (/^(?:please\s+)?(?:show|find|list|search|check|locate|what|which|where|who|how|why|when|explain|tell|can|could|would|is|are|do|does|i think|i want|i need to see|help|thanks?|thank you|hi|hello)\b/i.test(value)) return false;
+  return mentionsBloodGroup(value) ||
+    /(?:^|\s)(?:\d{1,3}|one|two|three|four|five|six|seven|eight|nine|ten)(?:\s*(?:units?|bags?))?\s*[.!]?$/i.test(value) ||
+    /\b(?:whole blood|red blood cells?|rbc|packed cells?|plasma|platelets?|cryoprecipitate|cryo)\b/i.test(value) ||
+    /^(?:near|in|at|around|close to)\b/i.test(value) ||
+    /^[\p{L}][\p{L} ,.'-]{1,60}$/u.test(value);
 }
