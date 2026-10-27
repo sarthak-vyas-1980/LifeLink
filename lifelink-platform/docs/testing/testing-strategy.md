@@ -85,9 +85,9 @@ npm run test:api
 
 ## 4. Live test dashboard (for presentations)
 
-```bash
-npm run test:dashboard
-```
+**One click:** start Docker Desktop, wait for "Engine running", then double-click `start-test-dashboard.cmd` in the repository root. It starts the test database, the test API and the dashboard, then opens `http://127.0.0.1:4321`. Keep its window open; closing it stops everything.
+
+From a terminal inside `lifelink-platform` the same launcher is `npm run test:presentation`. If PowerShell says *"npm.ps1 cannot be loaded because running scripts is disabled"*, type `npm.cmd` instead of `npm` (or use Command Prompt); this does not require changing any system setting. To start only the dashboard, use `npm run test:dashboard`.
 
 Open `http://127.0.0.1:4321`. Each layer has a **Run** button; results stream in row by row with pass, failure, known-defect and skipped counts and timings. Useful links:
 

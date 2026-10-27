@@ -23,6 +23,7 @@
     "admin:create": "node --env-file-if-exists=.env --require ./tests/tsx-userinfo-preload.cjs --import tsx scripts/create-admin.ts",
     "test:api": "node scripts/start-test-api.mjs",
     "test:dashboard": "node scripts/test-dashboard.mjs",
+    "test:presentation": "node scripts/presentation-tests.mjs",
     "rag:index": "node --env-file-if-exists=.env --require ./tests/tsx-userinfo-preload.cjs --import tsx scripts/index-rag-knowledge.ts"
   },
   "devDependencies": {
