@@ -724,6 +724,6 @@ export async function fetchUrgentBloodContext(
     details, facilities: combinedFacilities, inventory, coordinates,
     facilityLookupAvailable: facilityResult.status === "fulfilled" || inventoryFacilities.length > 0,
     inventoryAvailable: inventoryResult.status === "fulfilled",
-    actorCanCreateRequest: ["USER", "ADMINISTRATOR", "HOSPITAL_USER", "BLOOD_BANK_USER"].includes(actor.role),
+    actorCanCreateRequest: ["USER", "ADMINISTRATOR", "HOSPITAL_USER"].includes(actor.role),
   });
 }

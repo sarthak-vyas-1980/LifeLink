@@ -22,7 +22,6 @@ export interface RegistrationInput {
   phone: string;
   password: string;
   accountType: "USER" | "INSTITUTION";
-  role?: UserRole;
   institutionType?: InstitutionType;
   address?: string;
   contactPerson?: string;
@@ -134,15 +133,13 @@ export async function registerUser(input: RegistrationInput) {
     };
   }
 
-  if (!input.role) {
-    throw new ApiError(400, "USER_ROLE_REQUIRED", "Choose User or Admin for this account.");
-  }
+  // Public registration always creates a personal account; see scripts/create-admin.ts for administrators.
   const user = await createUser({
     name: input.name.trim(),
     email: normalizedEmail,
     phone: input.phone,
     passwordHash,
-    role: input.role,
+    role: UserRole.USER,
   });
   const role: AccessRole = user.role === UserRole.ADMIN ? "ADMINISTRATOR" : "USER";
   await recordAuditEvent({

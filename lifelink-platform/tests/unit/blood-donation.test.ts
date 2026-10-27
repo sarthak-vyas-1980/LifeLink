@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { recordCompletedDonationInventory } from "../../apps/api/src/modules/donations/routes";
 
-test("completed screened donation adds and links exactly one whole-blood unit using the verified group", async () => {
+test("UT-DON-01 completed screened donation adds and links exactly one whole-blood unit using the verified group", async () => {
   const inventoryCreates: any[] = [];
   const donationLinks: any[] = [];
   const tx = {
@@ -26,7 +26,7 @@ test("completed screened donation adds and links exactly one whole-blood unit us
   assert.equal(result.id, "inventory-1");
 });
 
-test("inventory linkage failure propagates so completion can roll back transactionally", async () => {
+test("UT-DON-02 inventory linkage failure propagates so completion can roll back transactionally", async () => {
   const tx = {
     bloodInventory: { create: async () => ({ id: "inventory-1" }) },
     donationInventory: { create: async () => { throw new Error("link failed"); } },

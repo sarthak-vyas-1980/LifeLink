@@ -3,6 +3,7 @@ import {
   createBloodInventory as persistBloodInventory,
   listBloodInventoryForInstitution,
   searchAvailableInventory,
+  stockStatus,
   updateBloodInventoryForInstitution as persistBloodInventoryUpdate,
 } from "@lifelink/database";
 import { authenticateRequest } from "../../middleware/auth";
@@ -84,6 +85,7 @@ export async function createBloodInventory(
     component: request.body.component,
     unitsAvailable: request.body.unitsAvailable,
     expiryDate: request.body.expiryDate,
+    status: stockStatus({ unitsAvailable: request.body.unitsAvailable, reservedUnits: 0, expiryDate: request.body.expiryDate }),
   });
 
   await recordAuditEvent({

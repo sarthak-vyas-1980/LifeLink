@@ -1,11 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { randomUUID } from "node:crypto";
+import { skipReason, useTestDatabase } from "./support";
 
-const testDatabaseUrl = process.env.LIFELINK_TEST_DATABASE_URL;
-
-test("blood workflow authorization, retry, expiry, inventory safety, and fulfilment", { skip: !testDatabaseUrl }, async () => {
-  process.env.DATABASE_URL = testDatabaseUrl!;
+test("IT-BLD-01 blood workflow authorization, retry, expiry, inventory safety, and fulfilment", { skip: skipReason }, async () => {
+  useTestDatabase();
   const { database, reserveBloodUnits } = await import("../../packages/database/src/index");
   const { BloodComponent, BloodGroup, InstitutionStatus, InstitutionType, RequestPriority, RequestStatus, RequestType, UserRole } = await import("@prisma/client");
   const { reviewBloodRequest, respondToBloodOffer, evaluateBloodOffer, fulfillBloodRequest, expireBloodReservations } = await import("../../apps/api/src/modules/requests/blood-workflow.service");

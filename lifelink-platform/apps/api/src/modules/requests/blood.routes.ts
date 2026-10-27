@@ -37,12 +37,9 @@ import {
   reviewBloodRequest as reviewBloodRequestWorkflow,
 } from "./blood-workflow.service";
 
-const requestRoles = [
-  "HOSPITAL_USER",
-  "USER",
-  "BLOOD_BANK_USER",
-  "ADMINISTRATOR",
-] as const;
+// Blood banks are providers: they see and answer requests but do not raise them (SRS use-case model).
+const creatorRoles = ["HOSPITAL_USER", "USER", "ADMINISTRATOR"] as const;
+const viewerRoles = [...creatorRoles, "BLOOD_BANK_USER"] as const;
 
 // Define the blood-request lifecycle endpoints.
 export function registerBloodRequestRoutes(router = Router()) {
@@ -50,7 +47,7 @@ export function registerBloodRequestRoutes(router = Router()) {
   router.post(
     "/",
     authenticateRequest(),
-    authorizeAction(...requestRoles),
+    authorizeAction(...creatorRoles),
     validateRequest(bloodRequestSchema),
     asyncRoute(createBloodRequest),
   );
@@ -63,11 +60,11 @@ export function registerBloodRequestRoutes(router = Router()) {
   router.post(
     "/:requestId/match",
     authenticateRequest(),
-    authorizeAction(...requestRoles),
+    authorizeAction(...creatorRoles),
     validateUuidParams("requestId"),
     asyncRoute(startBloodMatching),
   );
-  router.get("/", authenticateRequest(), authorizeAction(...requestRoles), asyncRoute(listBloodRequests));
+  router.get("/", authenticateRequest(), authorizeAction(...viewerRoles), asyncRoute(listBloodRequests));
   router.get("/:requestId/offers", authenticateRequest(), validateUuidParams("requestId"), asyncRoute(listBloodOffers));
   router.post(
     "/:requestId/review",

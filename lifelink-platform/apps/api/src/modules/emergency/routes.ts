@@ -19,9 +19,9 @@ import {
 } from "../requests/blood.routes";
 import { startBloodMatchingWorkflow } from "../requests/matching.service";
 
+// Same creators as standard blood requests; blood banks respond to emergencies rather than raise them.
 const emergencyRoles = [
   "HOSPITAL_USER",
-  "BLOOD_BANK_USER",
   "USER",
   "ADMINISTRATOR",
 ] as const;

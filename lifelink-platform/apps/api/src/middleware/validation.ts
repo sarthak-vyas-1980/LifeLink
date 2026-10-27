@@ -14,15 +14,14 @@ const phoneNumberSchema = z.string().trim().min(7).max(30)
     return digits >= 7 && digits <= 15;
   }, "Enter a valid phone number.");
 
-const userRoles = ["USER", "ADMIN"] as const;
-
 export const registrationSchema = z.object({
   name: z.string().trim().min(2).max(120),
   email: z.string().email().max(254),
   phone: phoneNumberSchema,
   password: z.string().min(6).max(128),
   accountType: z.enum(["USER", "INSTITUTION"]),
-  role: z.enum(userRoles).optional(),
+  // Public sign-up only creates personal accounts; administrators are created with `npm run admin:create`.
+  role: z.enum(["USER", "ADMIN"]).optional(),
   institutionType: z.enum(["HOSPITAL", "BLOOD_BANK", "ORGAN_CENTRE"]).optional(),
   address: z.string().trim().min(3).max(300).optional(),
   contactPerson: z.string().trim().min(2).max(120).optional(),
@@ -30,8 +29,8 @@ export const registrationSchema = z.object({
   organServiceEnabled: z.boolean().optional(),
   emergencySupportEnabled: z.boolean().optional(),
 }).superRefine((value, context) => {
-  if (value.accountType === "USER" && !value.role) {
-    context.addIssue({ code: z.ZodIssueCode.custom, path: ["role"], message: "Choose User or Admin." });
+  if (value.role === "ADMIN") {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["role"], message: "Administrator accounts cannot be created through public registration." });
   }
   if (value.accountType === "INSTITUTION" && (!value.institutionType || !value.address)) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ["institutionType"], message: "Enter the institution type and address." });

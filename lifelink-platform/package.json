@@ -14,7 +14,15 @@
     "seed:organ-demo": "node --import tsx scripts/seed-organ-demo.ts",
     "seed:blood-demo": "node --env-file-if-exists=.env --require ./tests/tsx-userinfo-preload.cjs --import tsx scripts/seed-blood-demo.ts",
     "seed:indore-organ-demo": "node --env-file-if-exists=.env --require ./tests/tsx-userinfo-preload.cjs --import tsx scripts/seed-indore-organ-demo.ts",
-    "test": "node --require ./tests/tsx-userinfo-preload.cjs --import tsx --test tests/unit/workflow.test.ts tests/unit/inventory.test.ts tests/unit/blood-donation.test.ts tests/unit/security-realtime.test.ts tests/unit/organ-coordination.test.ts tests/unit/rag.test.ts tests/integration/blood-workflow.test.ts",
+    "test": "node --require ./tests/tsx-userinfo-preload.cjs --import tsx --test tests/unit/workflow.test.ts tests/unit/inventory.test.ts tests/unit/blood-donation.test.ts tests/unit/security-realtime.test.ts tests/unit/organ-coordination.test.ts tests/unit/rag.test.ts tests/unit/blood-edge-cases.test.ts tests/unit/organ-edge-cases.test.ts tests/unit/rag-guardrails.test.ts tests/integration/blood-workflow.test.ts tests/integration/blood-edge-cases.test.ts tests/integration/organ-workflow.test.ts tests/integration/api-http.test.ts",
+    "test:unit": "node --require ./tests/tsx-userinfo-preload.cjs --import tsx --test tests/unit/workflow.test.ts tests/unit/inventory.test.ts tests/unit/blood-donation.test.ts tests/unit/security-realtime.test.ts tests/unit/organ-coordination.test.ts tests/unit/rag.test.ts tests/unit/blood-edge-cases.test.ts tests/unit/organ-edge-cases.test.ts tests/unit/rag-guardrails.test.ts",
+    "test:integration": "node --env-file-if-exists=.env.test --require ./tests/tsx-userinfo-preload.cjs --import tsx --test --test-concurrency=1 tests/integration/blood-workflow.test.ts tests/integration/blood-edge-cases.test.ts tests/integration/organ-workflow.test.ts tests/integration/api-http.test.ts",
+    "test:e2e": "node --env-file-if-exists=.env.test --require ./tests/tsx-userinfo-preload.cjs --import tsx --test tests/e2e/blood-journey.e2e.test.ts",
+    "test:rag-eval": "node --env-file-if-exists=.env.test --require ./tests/tsx-userinfo-preload.cjs --import tsx --test tests/e2e/rag-evaluation.e2e.test.ts",
+    "typecheck:tests": "tsc -p tests/tsconfig.json --noEmit",
+    "admin:create": "node --env-file-if-exists=.env --require ./tests/tsx-userinfo-preload.cjs --import tsx scripts/create-admin.ts",
+    "test:api": "node scripts/start-test-api.mjs",
+    "test:dashboard": "node scripts/test-dashboard.mjs",
     "rag:index": "node --env-file-if-exists=.env --require ./tests/tsx-userinfo-preload.cjs --import tsx scripts/index-rag-knowledge.ts"
   },
   "devDependencies": {

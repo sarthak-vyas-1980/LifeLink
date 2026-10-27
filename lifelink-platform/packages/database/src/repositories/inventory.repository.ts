@@ -42,21 +42,31 @@ export function updateBloodInventory(
   return database.bloodInventory.update({ where: { id }, data });
 }
 
-export async function updateBloodInventoryForInstitution(
+// Derive the stored status from the unit counts so a restocked record becomes searchable again.
+export function stockStatus(record: { unitsAvailable: number; reservedUnits: number; expiryDate?: Date | null }, now = new Date()) {
+  if (record.expiryDate && record.expiryDate <= now) return BloodInventoryStatus.EXPIRED;
+  if (record.unitsAvailable > 0) return BloodInventoryStatus.AVAILABLE;
+  return record.reservedUnits > 0 ? BloodInventoryStatus.RESERVED : BloodInventoryStatus.UNAVAILABLE;
+}
+
+export function updateBloodInventoryForInstitution(
   id: string,
   institutionId: string,
   data: Prisma.BloodInventoryUpdateInput,
 ) {
-  const result = await database.bloodInventory.updateMany({
-    where: { id, institutionId },
-    data,
+  return runInTransaction(async (transaction) => {
+    const result = await transaction.bloodInventory.updateMany({
+      where: { id, institutionId },
+      data,
+    });
+
+    if (result.count !== 1) {
+      throw new Error("Inventory does not belong to the requesting institution.");
+    }
+
+    const record = await transaction.bloodInventory.findUniqueOrThrow({ where: { id } });
+    return transaction.bloodInventory.update({ where: { id }, data: { status: stockStatus(record) } });
   });
-
-  if (result.count !== 1) {
-    throw new Error("Inventory does not belong to the requesting institution.");
-  }
-
-  return database.bloodInventory.findUniqueOrThrow({ where: { id } });
 }
 
 // Search authoritative live inventory; geospatial ranking belongs to the matching service.
@@ -100,14 +110,7 @@ function updateAvailabilityStatus(
     .then((record) =>
       transaction.bloodInventory.update({
         where: { id },
-        data: {
-          status:
-            record.unitsAvailable > 0
-              ? BloodInventoryStatus.AVAILABLE
-              : record.reservedUnits > 0
-                ? BloodInventoryStatus.RESERVED
-                : BloodInventoryStatus.UNAVAILABLE,
-        },
+        data: { status: stockStatus({ unitsAvailable: record.unitsAvailable, reservedUnits: record.reservedUnits }) },
       }),
     );
 }

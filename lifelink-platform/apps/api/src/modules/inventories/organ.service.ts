@@ -80,7 +80,7 @@ export async function transitionOrgan(actor: AuthContext, organId: string, toSta
 		}
 		const acceptedOffer = await tx.organOffer.findFirst({ where: { organId, status: OrganOfferStatus.ACCEPTED }, select: { recipientId: true } });
 		if (acceptedOffer && (toStatus === OrganStatus.TRANSPLANTED || toStatus === OrganStatus.COMPLETED)) await tx.organRecipient.updateMany({ where: { id: acceptedOffer.recipientId, status: { in: [OrganRecipientStatus.ACTIVE, OrganRecipientStatus.MATCHED] } }, data: { status: OrganRecipientStatus.CLOSED } });
-		if (acceptedOffer && (toStatus === OrganStatus.CANCELLED || toStatus === OrganStatus.UNAVAILABLE)) await tx.organRecipient.updateMany({ where: { id: acceptedOffer.recipientId, status: OrganRecipientStatus.MATCHED }, data: { status: OrganRecipientStatus.ACTIVE } });
+		if (acceptedOffer && (toStatus === OrganStatus.CANCELLED || toStatus === OrganStatus.UNAVAILABLE || toStatus === OrganStatus.DISCARDED)) await tx.organRecipient.updateMany({ where: { id: acceptedOffer.recipientId, status: OrganRecipientStatus.MATCHED }, data: { status: OrganRecipientStatus.ACTIVE } });
 		await addEvent(tx, { organId, actor, eventType: "ORGAN_STATUS_CHANGED", fromStatus: organ.status, toStatus, metadata: { reference: organ.reference } });
 		await tx.auditLog.create({ data: { actorId: actor.userId, actorInstitutionId: actor.institutionId, action: "ORGAN_STATUS_CHANGED", entityType: "OrganRecord", entityId: organ.id, metadata: { fromStatus: organ.status, toStatus } } });
 		return updated;

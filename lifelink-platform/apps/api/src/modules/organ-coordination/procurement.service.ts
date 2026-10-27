@@ -77,11 +77,16 @@ export async function updateOrganProcurement(actor: AuthContext, procurementId: 
 		const preservationPolicy = policies.find((policy) => policy.institutionId === record.organ.institutionId) ?? policies.find((policy) => policy.institutionId === null);
 		if (posthumous && !preservationPolicy) throw new ApiError(409, "PRESERVATION_POLICY_REQUIRED", `Apply the database preservation policy migration before completing retrieval for ${record.organ.organType.toLowerCase()}.`);
 		const updated = await tx.organProcurement.update({ where: { id: record.id }, data: { status, startedAt: status === ProcurementStatus.IN_PROGRESS ? now : undefined, completedAt: status === ProcurementStatus.COMPLETED ? now : undefined, retrievalTime: status === ProcurementStatus.COMPLETED ? now : undefined } });
-		const organStatus = status === ProcurementStatus.IN_PROGRESS ? OrganStatus.RETRIEVAL_IN_PROGRESS : status === ProcurementStatus.COMPLETED ? posthumous && preservationPolicy ? OrganStatus.PRESERVING : OrganStatus.RETRIEVED : status === ProcurementStatus.CANCELLED || status === ProcurementStatus.FAILED ? OrganStatus.CANCELLED : undefined;
+		const organStatus = status === ProcurementStatus.IN_PROGRESS ? OrganStatus.RETRIEVAL_IN_PROGRESS : status === ProcurementStatus.COMPLETED ? posthumous && preservationPolicy ? OrganStatus.PRESERVING : OrganStatus.RETRIEVED : status === ProcurementStatus.FAILED ? OrganStatus.DISCARDED : status === ProcurementStatus.CANCELLED ? OrganStatus.CANCELLED : undefined;
 		if (organStatus) {
 			await tx.organRecord.update({ where: { id: record.organ.id }, data: { status: organStatus, retrievalTime: status === ProcurementStatus.COMPLETED ? now : undefined, ...(posthumous && preservationPolicy ? { preservationMethod: preservationPolicy.method, preservationStartTime: now, coldIschemiaStart: now } : {}) } });
+			if (organStatus === OrganStatus.DISCARDED || organStatus === OrganStatus.CANCELLED) {
+				// The accepted recipient goes back to the active list so another organ can be matched.
+				const acceptedOffer = await tx.organOffer.findFirst({ where: { organId: record.organ.id, status: OrganOfferStatus.ACCEPTED }, select: { recipientId: true } });
+				if (acceptedOffer) await tx.organRecipient.updateMany({ where: { id: acceptedOffer.recipientId, status: "MATCHED" }, data: { status: "ACTIVE" } });
+			}
 			if (posthumous && status === ProcurementStatus.COMPLETED) await tx.organDonor.updateMany({ where: { id: record.organ.donorId, status: { in: [OrganDonorStatus.REGISTERED, OrganDonorStatus.ACTIVE] } }, data: { status: OrganDonorStatus.FULFILLED } });
-			await addEvent(tx, { organId: record.organ.id, actor, eventType: status === ProcurementStatus.IN_PROGRESS ? "PROCUREMENT_STARTED" : status === ProcurementStatus.COMPLETED ? "PROCUREMENT_COMPLETED" : "PROCUREMENT_CANCELLED", fromStatus: record.organ.status, toStatus: organStatus, metadata: posthumous && preservationPolicy ? { preservationMethod: preservationPolicy.method, preservationStartedAtRetrieval: true } : undefined });
+			await addEvent(tx, { organId: record.organ.id, actor, eventType: status === ProcurementStatus.IN_PROGRESS ? "PROCUREMENT_STARTED" : status === ProcurementStatus.COMPLETED ? "PROCUREMENT_COMPLETED" : status === ProcurementStatus.FAILED ? "PROCUREMENT_FAILED" : "PROCUREMENT_CANCELLED", fromStatus: record.organ.status, toStatus: organStatus, metadata: posthumous && preservationPolicy ? { preservationMethod: preservationPolicy.method, preservationStartedAtRetrieval: true } : undefined });
 		}
 		await tx.auditLog.create({ data: { actorId: actor.userId, actorInstitutionId: actor.institutionId, action: `PROCUREMENT_${status}`, entityType: "OrganProcurement", entityId: record.id } });
 		return updated;

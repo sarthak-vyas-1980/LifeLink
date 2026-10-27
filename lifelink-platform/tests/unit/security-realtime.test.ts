@@ -11,7 +11,7 @@ const request = {
   matches: [{ providerInstitutionId: "bank-a" }],
 } as never;
 
-test("request reads are limited to requester, recipient, linked institutions, or admin", () => {
+test("UT-SEC-01 request reads are limited to requester, recipient, linked institutions, or admin", () => {
   for (const userId of ["requester", "recipient"]) {
     assert.equal(mayReadRequest(request, { userId, role: "USER", principalType: "USER" }), true);
   }
@@ -21,12 +21,12 @@ test("request reads are limited to requester, recipient, linked institutions, or
   assert.equal(mayReadRequest(request, { userId: "outsider", role: "USER", principalType: "USER" }), false);
 });
 
-test("a provider cannot coordinate another institution's request", () => {
+test("UT-SEC-02 a provider cannot coordinate another institution's request", () => {
   assert.throws(() => assertMayCoordinate(request, { role: "BLOOD_BANK_USER", principalType: "INSTITUTION", institutionId: "bank-a", capabilities: { blood: true, organ: false } }), { status: 404 });
   assert.doesNotThrow(() => assertMayCoordinate(request, { role: "HOSPITAL_USER", principalType: "INSTITUTION", institutionId: "hospital-a", capabilities: { blood: true, organ: false } }));
 });
 
-test("duplicate workflow event delivery is idempotently suppressed", () => {
+test("UT-SEC-03 duplicate workflow event delivery is idempotently suppressed", () => {
   const eventId = `test-event-${randomUUID()}`;
   assert.equal(rememberEventForDelivery(eventId), true);
   assert.equal(rememberEventForDelivery(eventId), false);

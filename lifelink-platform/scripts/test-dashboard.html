@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LifeLink Test Dashboard</title>
+<style>
+  :root {
+    --navy: #0b3c49; --teal: #0e8c86; --teal-soft: #eaf6f5; --red: #d7263d; --red-soft: #fdecee;
+    --amber: #a86400; --amber-soft: #fdf3e2; --grey: #6b7f8c; --line: #d6e9e7; --bg: #f5fafa; --ink: #1b2a33;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.45 "Segoe UI", Calibri, Arial, sans-serif; }
+  header { background: var(--navy); color: #fff; padding: 20px 32px; display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+  header .mark { width: 44px; height: 44px; border-radius: 50%; background: var(--teal); display: grid; place-items: center; font-size: 24px; }
+  header h1 { margin: 0; font-size: 26px; }
+  header .target { margin-left: auto; font-size: 14px; color: #bfe3df; text-align: right; }
+  main { max-width: 1280px; margin: 0 auto; padding: 24px 32px 48px; }
+  .suites { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
+  .suite { background: #fff; border: 1px solid var(--line); border-radius: 14px; padding: 18px; display: flex; flex-direction: column; gap: 8px; }
+  .suite h2 { margin: 0; font-size: 19px; color: var(--navy); }
+  .suite p { margin: 0; color: var(--grey); font-size: 14px; flex: 1; }
+  .suite .note { font-size: 13px; color: var(--amber); }
+  button { font: inherit; font-weight: 600; border: 0; border-radius: 10px; padding: 10px 16px; cursor: pointer; background: var(--teal); color: #fff; }
+  button:disabled, .actions .all:disabled { background: #c9d6da; cursor: not-allowed; }
+  .actions { display: flex; gap: 12px; align-items: center; margin: 20px 0; flex-wrap: wrap; }
+  .actions .all { background: var(--navy); }
+  .status { color: var(--grey); font-size: 15px; }
+  .counters { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; }
+  .counter { background: #fff; border: 1px solid var(--line); border-radius: 14px; padding: 14px 18px; }
+  .counter b { display: block; font-size: 40px; line-height: 1.1; }
+  .counter span { color: var(--grey); font-size: 14px; }
+  .counter.pass b { color: var(--teal); } .counter.fail b { color: var(--red); } .counter.known b { color: var(--amber); } .counter.skip b { color: var(--grey); }
+  .results { margin-top: 20px; background: #fff; border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
+  .group { padding: 12px 18px; background: var(--teal-soft); color: var(--navy); font-weight: 700; border-top: 1px solid var(--line); }
+  .group:first-child { border-top: 0; }
+  .row { display: grid; grid-template-columns: 30px 110px 1fr 70px; gap: 10px; padding: 10px 18px; border-top: 1px solid var(--line); align-items: start; }
+  .row .icon { font-weight: 700; font-size: 18px; }
+  .row.pass .icon { color: var(--teal); } .row.fail { background: var(--red-soft); } .row.fail .icon { color: var(--red); }
+  .row.known { background: var(--amber-soft); } .row.known .icon { color: var(--amber); } .row.skip .icon { color: var(--grey); }
+  .row .id { font-family: Consolas, "Courier New", monospace; font-size: 13px; background: var(--teal-soft); color: var(--navy); border-radius: 6px; padding: 2px 6px; justify-self: start; }
+  .row .detail { display: block; font-size: 13px; color: var(--grey); white-space: pre-wrap; margin-top: 2px; }
+  .row.fail .detail { color: var(--red); } .row.known .detail { color: var(--amber); }
+  .row .time { color: var(--grey); font-size: 13px; text-align: right; }
+  .empty { padding: 28px; text-align: center; color: var(--grey); }
+  .legend { margin-top: 12px; font-size: 13px; color: var(--grey); }
+  .log { margin-top: 12px; font-family: Consolas, monospace; font-size: 13px; color: var(--navy); white-space: pre-wrap; }
+  @media (max-width: 760px) { .counters { grid-template-columns: repeat(2, 1fr); } .row { grid-template-columns: 24px 1fr; } .row .id, .row .time { display: none; } }
+</style>
+</head>
+<body>
+<header>
+  <div class="mark">&#10084;</div>
+  <h1>LifeLink &middot; Live Test Dashboard</h1>
+  <div class="target" id="target">Loading test targets&hellip;</div>
+</header>
+<main>
+  <section class="suites" id="suites"></section>
+  <div class="actions">
+    <button class="all" id="run-all">Run all available</button>
+    <span class="status" id="status">Choose a test layer to run.</span>
+  </div>
+  <section class="counters">
+    <div class="counter pass"><b id="c-pass">0</b><span>Passed</span></div>
+    <div class="counter fail"><b id="c-fail">0</b><span>Failed</span></div>
+    <div class="counter known"><b id="c-known">0</b><span>Known defects (expected to fail)</span></div>
+    <div class="counter skip"><b id="c-skip">0</b><span>Skipped</span></div>
+    <div class="counter"><b id="c-time">0.0s</b><span>Elapsed</span></div>
+  </section>
+  <section class="results" id="results"><div class="empty">Results appear here as each test finishes.</div></section>
+  <div class="legend">Known defect: the test describes the correct behaviour and keeps failing until the defect is fixed, so it cannot quietly come back.</div>
+  <div class="log" id="log"></div>
+</main>
+<script>
+  const el = (id) => document.getElementById(id);
+  const counts = { pass: 0, fail: 0, known: 0, skip: 0 };
+  let source = null, startedAt = 0, timer = null, suitesInfo = [];
+  const follow = !/[?&](follow=0|replay=)/.test(location.search);
+  let replaying = false;
+
+  function escapeHtml(value) {
+    return String(value ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  }
+  function splitName(name) {
+    const match = String(name).match(/^((?:UT|IT|E2E)-[A-Z]*-?\d+|\[[A-Z]\d+\])\s+(.*)$/);
+    return match ? { id: match[1].replace(/[\[\]]/g, ""), title: match[2] } : { id: "", title: name };
+  }
+  function renderCounts() {
+    for (const key of Object.keys(counts)) el("c-" + key).textContent = counts[key];
+  }
+  function setBusy(busy) {
+    document.querySelectorAll("button").forEach((button) => { button.disabled = busy || button.dataset.blocked === "true"; });
+    el("run-all").disabled = busy || suitesInfo.every((suite) => suite.blocked);
+  }
+  function addGroup(label) {
+    const results = el("results");
+    if (results.querySelector(".empty")) results.innerHTML = "";
+    const group = document.createElement("div");
+    group.className = "group";
+    group.textContent = label;
+    results.appendChild(group);
+  }
+  function addRow(kind, name, detail, duration) {
+    const { id, title } = splitName(name);
+    const icon = { pass: "&#10003;", fail: "&#10007;", known: "!", skip: "&ndash;" }[kind];
+    const row = document.createElement("div");
+    row.className = "row " + kind;
+    row.innerHTML = '<span class="icon">' + icon + '</span><span class="id">' + escapeHtml(id || "test") + '</span><span>' + escapeHtml(title) +
+      (detail ? '<span class="detail">' + escapeHtml(detail) + '</span>' : "") + '</span><span class="time">' + (duration ? Math.round(duration) + " ms" : "") + "</span>";
+    el("results").appendChild(row);
+    if (follow) row.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }
+  function handle(event) {
+    if (event.type === "suite-start") { addGroup(event.label); el("status").textContent = "Running " + event.label + "…"; return; }
+    if (event.type === "suite-end") {
+      if (replaying) {
+        el("c-time").textContent = (event.durationMs / 1000).toFixed(1) + "s";
+        el("status").textContent = "Recorded run finished " + new Date(event.finishedAt).toLocaleString() + (counts.fail ? " with " + counts.fail + " unexpected failure(s)." : ": no unexpected failures.");
+      }
+      return;
+    }
+    if (event.type === "start" && !event.suite) { el("status").textContent = "Running: " + event.name; return; }
+    if (event.type === "log") { el("log").textContent += event.message + "\n"; return; }
+    if (event.type === "done") { finish(); return; }
+    if (event.type !== "pass" && event.type !== "fail") return;
+    if (event.suite) {
+      if (event.skip) { counts.skip += 1; addRow("skip", event.name, typeof event.skip === "string" ? event.skip : "Skipped"); renderCounts(); }
+      return;
+    }
+    let kind = event.type;
+    let detail = event.error;
+    if (event.todo) { kind = event.type === "fail" ? "known" : "pass"; detail = typeof event.todo === "string" ? event.todo : "Known defect"; }
+    else if (event.skip) { kind = "skip"; detail = typeof event.skip === "string" ? event.skip : "Skipped"; }
+    counts[kind] += 1;
+    addRow(kind, event.name, kind === "pass" ? "" : detail, event.duration);
+    renderCounts();
+  }
+  function finish() {
+    if (source) source.close();
+    source = null;
+    clearInterval(timer);
+    el("status").textContent = counts.fail ? "Finished with " + counts.fail + " unexpected failure(s)." : "Finished: no unexpected failures.";
+    setBusy(false);
+  }
+  function run(suite) {
+    if (source) return;
+    Object.keys(counts).forEach((key) => { counts[key] = 0; });
+    renderCounts();
+    el("results").innerHTML = "";
+    el("log").textContent = "";
+    startedAt = performance.now();
+    timer = setInterval(() => { el("c-time").textContent = ((performance.now() - startedAt) / 1000).toFixed(1) + "s"; }, 100);
+    setBusy(true);
+    source = new EventSource("/api/run?suite=" + encodeURIComponent(suite));
+    source.onmessage = (message) => handle(JSON.parse(message.data));
+    source.onerror = () => { if (source) { el("status").textContent = "Connection closed."; finish(); } };
+  }
+  async function load() {
+    const info = await (await fetch("/api/suites")).json();
+    suitesInfo = info.suites;
+    el("target").innerHTML = "Test database: " + escapeHtml(info.databaseHost ?? "not configured") + "<br>Test API: " + escapeHtml(info.apiUrl ?? "not configured");
+    el("suites").innerHTML = info.suites.map((suite) =>
+      '<div class="suite"><h2>' + escapeHtml(suite.label) + '</h2><p>' + escapeHtml(suite.description) + '</p>' +
+      '<span class="note">' + (suite.blocked ? escapeHtml(suite.blocked) : suite.files + " test file" + (suite.files === 1 ? "" : "s") + " &middot; ready") + "</span>" +
+      '<button data-suite="' + suite.id + '" data-blocked="' + Boolean(suite.blocked) + '">Run ' + escapeHtml(suite.label) + "</button></div>").join("");
+    document.querySelectorAll("button[data-suite]").forEach((button) => button.addEventListener("click", () => run(button.dataset.suite)));
+    setBusy(false);
+    const replay = new URLSearchParams(location.search).get("replay");
+    if (replay) {
+      const events = await (await fetch("/api/last?suite=" + encodeURIComponent(replay))).json();
+      replaying = true;
+      el("results").innerHTML = events.length ? "" : '<div class="empty">No recorded run for this layer yet. Run it first.</div>';
+      events.forEach(handle);
+      return;
+    }
+    const autorun = new URLSearchParams(location.search).get("autorun");
+    if (autorun && (autorun === "all" || info.suites.some((suite) => suite.id === autorun && !suite.blocked))) run(autorun);
+  }
+  el("run-all").addEventListener("click", () => run("all"));
+  load();
+</script>
+</body>
+</html>

@@ -115,6 +115,8 @@ const emergencySymptomPatterns = [
   /\b(?:major (?:accidents?|traumas?)|serious (?:crash|collision|accident|trauma|head injury|neck injury|spinal injury)|serious (?:head|neck|spinal) injuries?|serious head,? neck,? (?:or )?spinal injuries?|fell from (?:a )?(?:roof|ladder|height)|deep (?:or )?(?:severe )?(?:wounds?|cuts?)|severe wounds?|wound is deep|severe deformity|limb (?:at an )?odd angle|bone (?:is )?visible|spinal injury)\b/i,
   /\b(?:severe chest pain|crushing (?:chest )?pain|chest pressure (?:and|with) (?:sweating|breathlessness|shortness of breath))\b/i,
   /\b(?:stroke(?:[- ]like)? symptoms?|face drooping|one[- ]sided weakness|sudden(?:ly)? (?:slurred speech|trouble speaking|(?:can't|cannot) speak clearly))\b/i,
+  // Everyday descriptions of the same stroke signs ("her face is drooping", "speech became slurred").
+  /\b(?:face (?:is |has |was |started |began )?droop(?:s|ing|ed|y)?|(?:drooping|droopy) face|slurred speech (?:came on |started )?(?:suddenly|all of a sudden)|(?:speech|words?) (?:suddenly )?(?:became|become|is|are|got|went) slurred|(?:sudden )?(?:weakness|numbness) (?:on|in|down) one side|(?:one|left|right) side of (?:his|her|their|my|the) (?:face|body) (?:droops|is drooping|went numb|is numb|is weak))\b/i,
   /\b(?:severe (?:burns?|burn)|large (?:or deep )?burn|large deep burn|chemical burn|electrical burn|burns? (?:over|covering) (?:a )?large area)\b/i,
   /\b(?:new numbness|numbness after (?:the )?injury|tingling after (?:the )?injury|limb is (?:blue|cold)|cold or blue limb|embedded object)\b/i,
 ];

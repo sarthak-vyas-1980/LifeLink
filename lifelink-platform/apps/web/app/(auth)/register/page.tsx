@@ -8,14 +8,12 @@ import { ApiFailure, requestApi } from "../../../lib/api-client";
 import { getCurrentSession, saveCurrentSession, type Session } from "../../../lib/auth";
 
 type AccountType = "USER" | "INSTITUTION";
-type AccountRole = "USER" | "ADMIN";
 type InstitutionType = "HOSPITAL" | "BLOOD_BANK" | "ORGAN_CENTRE";
 
 export default function RegisterPage() {
   const router = useRouter();
   const [accountType, setAccountType] = useState<AccountType>();
   const [institutionType, setInstitutionType] = useState<InstitutionType>();
-  const [accountRole, setAccountRole] = useState<AccountRole>();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
@@ -34,7 +32,7 @@ export default function RegisterPage() {
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!accountType || (accountType === "INSTITUTION" && (!institutionType || !address.trim())) || (accountType === "USER" && !accountRole)) {
+    if (!accountType || (accountType === "INSTITUTION" && (!institutionType || !address.trim()))) {
       setError("Complete the account type and required details to continue.");
       return;
     }
@@ -50,7 +48,7 @@ export default function RegisterPage() {
           phone,
           password,
           accountType,
-          ...(accountType === "USER" ? { role: accountRole } : { institutionType, address, ...(institutionType === "HOSPITAL" ? { bloodServiceEnabled, organServiceEnabled, emergencySupportEnabled } : {}) }),
+          ...(accountType === "USER" ? {} : { institutionType, address, ...(institutionType === "HOSPITAL" ? { bloodServiceEnabled, organServiceEnabled, emergencySupportEnabled } : {}) }),
         }),
       });
       saveCurrentSession(session);
@@ -85,7 +83,7 @@ export default function RegisterPage() {
             <legend>1. What type of account do you need?</legend>
             <div className="auth-choice-row">
               <button type="button" className={`auth-choice ${accountType === "USER" ? "selected" : ""}`} aria-pressed={accountType === "USER"} onClick={() => { setAccountType("USER"); setError(""); }}>
-                <strong>Individual</strong><span>Personal use or platform administration</span>
+                <strong>Individual</strong><span>Donate blood, request blood, or register organ needs</span>
               </button>
               <button type="button" className={`auth-choice ${accountType === "INSTITUTION" ? "selected" : ""}`} aria-pressed={accountType === "INSTITUTION"} onClick={() => { setAccountType("INSTITUTION"); setError(""); }}>
                 <strong>Institution</strong><span>Hospitals, blood banks, and organ centres</span>
@@ -111,18 +109,6 @@ export default function RegisterPage() {
                   {institutionType === "HOSPITAL" && <fieldset className="auth-choice-group"><legend>Optional hospital services</legend><div className="auth-service-list"><label className="auth-service-choice"><input type="checkbox" checked={bloodServiceEnabled} onChange={(event) => setBloodServiceEnabled(event.target.checked)} /> Blood coordination</label><label className="auth-service-choice"><input type="checkbox" checked={organServiceEnabled} onChange={(event) => setOrganServiceEnabled(event.target.checked)} /> Organ coordination</label><label className="auth-service-choice"><input type="checkbox" checked={emergencySupportEnabled} onChange={(event) => setEmergencySupportEnabled(event.target.checked)} /> Emergency support</label></div></fieldset>}
                 </>
               )}
-              {accountType === "USER" && (
-                <fieldset className="auth-choice-group">
-                  <legend>2. Choose your account role</legend>
-                  <div className="auth-role-list">
-                    {(["USER", "ADMIN"] as const).map((role) => (
-                      <button key={role} type="button" className={`auth-role ${accountRole === role ? "selected" : ""}`} aria-pressed={accountRole === role} onClick={() => { setAccountRole(role); setError(""); }}>
-                        {role === "USER" ? "Individual" : "Admin"}
-                      </button>
-                    ))}
-                  </div>
-                </fieldset>
-              )}
               <label>{accountType === "INSTITUTION" ? "Institution name" : "Full name"}<input required minLength={2} maxLength={160} autoComplete="name" value={name} onChange={(event) => setName(event.target.value)} /></label>
               <label>Email address<input required type="email" maxLength={254} autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} /></label>
               <label>Phone number<input required type="tel" autoComplete="tel" inputMode="tel" value={phone} onChange={(event) => setPhone(event.target.value)} /></label>
@@ -131,7 +117,7 @@ export default function RegisterPage() {
           )}
 
           {error && <p className="error" role="alert">{error}</p>}
-          <button className="button primary login-submit" disabled={busy || !accountType || (accountType === "INSTITUTION" && (!institutionType || !address.trim())) || (accountType === "USER" && !accountRole)}>
+          <button className="button primary login-submit" disabled={busy || !accountType || (accountType === "INSTITUTION" && (!institutionType || !address.trim()))}>
             {busy ? "Creating account…" : "Create account"}
           </button>
           <p className="auth-register-link">Already registered? <Link href="/login">Sign in</Link></p>
